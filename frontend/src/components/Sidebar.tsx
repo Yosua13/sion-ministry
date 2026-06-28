@@ -15,21 +15,14 @@ import {
 } from "lucide-react";
 import { SyncState } from "../types";
 
-// Custom Sion Ministry High-Fidelity SVG Logo
+// Custom Sion Ministry Image Logo
 export function SionLogo({ className = "h-8 w-8" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 100 100" className={`${className} text-indigo-600 transition-all duration-300`} fill="currentColor">
-      {/* Outer elegant ring representing the global reach of Sion Ministry */}
-      <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="6 3" className="opacity-40" />
-      <circle cx="50" cy="50" r="36" fill="none" stroke="currentColor" stroke-width="1.5" className="opacity-20" />
-      {/* Dynamic light bursts behind the cross */}
-      <path d="M50 10 L50 90 M10 50 L90 50" stroke="currentColor" stroke-width="0.5" stroke-dasharray="2 2" className="opacity-25" />
-      {/* Royal / Ministry Cross styled with subtle serifs */}
-      <path d="M48 20 C48 18, 52 18, 52 20 L52 44 L76 44 C78 44, 78 48, 76 48 L52 48 L52 80 C52 82, 48 82, 48 80 L48 48 L24 48 C22 48, 22 44, 24 44 L48 44 Z" fill="currentColor" />
-      {/* Opened Holy Bible at the center overlay */}
-      <path d="M40 45 L40 54 Q50 50 60 54 L60 45 Q50 41 40 45 Z" fill="#1a0505" className="opacity-90" />
-      <path d="M41 46 C46 44, 54 44, 59 46" stroke="currentColor" stroke-width="0.5" fill="none" />
-    </svg>
+    <img 
+      src="/logo.jpeg" 
+      alt="Sion Logo" 
+      className={`${className} rounded-full object-cover`} 
+    />
   );
 }
 

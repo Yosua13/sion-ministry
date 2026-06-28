@@ -134,7 +134,7 @@ export default function Members({
     if (!formPhone) {
       tempErrors.phone = "No. Telepon / WhatsApp wajib diisi";
     } else if (phoneDigits.length < 12 || phoneDigits.length > 14) {
-      tempErrors.phone = "Nomor HP harus minimal input 12 angka dan maksimal input 14 angka";
+      tempErrors.phone = "Nomor HP harus minimal input 11 angka dan maksimal input 13 angka";
     }
 
     if (!formStage) tempErrors.stage = "Tahap pemuridan wajib dipilih";
