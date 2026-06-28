@@ -44,22 +44,36 @@ export default function DonationsComponent({
 
   // Donation Form state
   const [donorName, setDonorName] = useState("");
-  const [donationAmount, setDonationAmount] = useState<number>(100000);
+  const [donationAmount, setDonationAmount] = useState<string>("");
   const [donorMessage, setDonorMessage] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("QRIS (Gopay/OVO/Dana)");
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [showThankYou, setShowThankYou] = useState(false);
 
   // New Campaign Form state
   const [newTitle, setNewTitle] = useState("");
   const [newDescription, setNewDescription] = useState("");
-  const [newTarget, setNewTarget] = useState<number>(10000000);
-  const [newCategory, setNewCategory] = useState<DonationCampaign["category"]>("Beasiswa Pendidikan");
-  const [newBanner, setNewBanner] = useState(CAMPAIGN_PRESET_BANNERS[0]);
+  const [newTarget, setNewTarget] = useState<string>("");
+  const [newCategory, setNewCategory] = useState<DonationCampaign["category"]>("" as any);
+  const [newBanner, setNewBanner] = useState("");
 
   // Validation and alert states
   const [donateErrors, setDonateErrors] = useState<Record<string, string>>({});
   const [campaignErrors, setCampaignErrors] = useState<Record<string, string>>({});
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+
+  // Helper to format string with thousand separators (e.g. 1000000 -> 1.000.000)
+  const formatNumberWithDot = (val: string) => {
+    const digits = val.replace(/\D/g, "");
+    if (!digits) return "";
+    return new Intl.NumberFormat("id-ID").format(Number(digits));
+  };
+
+  // Helper to parse the formatted string back to number
+  const parseDotNumber = (val: string) => {
+    const digits = val.replace(/\D/g, "");
+    return digits ? Number(digits) : 0;
+  };
 
   const formatRupiah = (amount: number) => {
     return new Intl.NumberFormat("id-ID", {
@@ -69,26 +83,41 @@ export default function DonationsComponent({
     }).format(amount);
   };
 
+  const handleBannerFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setNewBanner(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleOpenDonateModal = (campaign: DonationCampaign) => {
     setSelectedCampaign(campaign);
     setDonorName("");
-    setDonationAmount(100000);
+    setDonationAmount("");
     setDonorMessage("");
-    setPaymentMethod("QRIS (Gopay/OVO/Dana)");
+    setPaymentMethod("");
     setShowThankYou(false);
     setDonateErrors({});
   };
 
   const handleSelectPresetAmount = (amount: number) => {
-    setDonationAmount(amount);
+    setDonationAmount(new Intl.NumberFormat("id-ID").format(amount));
   };
 
   const handleDonateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
+    const numericAmount = parseDotNumber(donationAmount);
     const errors: Record<string, string> = {};
-    if (!donationAmount || donationAmount <= 0) {
-      errors.amount = "Jumlah donasi harus lebih besar dari 0";
+    if (!donorName.trim()) errors.donorName = "Nama donatur wajib diisi";
+    if (!donationAmount || numericAmount <= 0) {
+      errors.amount = "Jumlah donasi wajib diisi dan lebih dari 0";
+    }
+    if (!paymentMethod) {
+      errors.paymentMethod = "Metode pembayaran wajib dipilih";
     }
 
     if (Object.keys(errors).length > 0) {
@@ -103,8 +132,8 @@ export default function DonationsComponent({
     onAddDonationRecord({
       campaignId: selectedCampaign.id,
       campaignTitle: selectedCampaign.title,
-      donorName: donorName || "Hamba Allah (Anonim)",
-      amount: Number(donationAmount),
+      donorName: donorName,
+      amount: numericAmount,
       message: donorMessage || "Kiranya menjadi berkat bagi pelayanan Sion.",
       paymentMethod: paymentMethod
     });
@@ -121,9 +150,9 @@ export default function DonationsComponent({
   const handleOpenNewCampaignModal = () => {
     setNewTitle("");
     setNewDescription("");
-    setNewTarget(10000000);
-    setNewCategory("Beasiswa Pendidikan");
-    setNewBanner(CAMPAIGN_PRESET_BANNERS[0]);
+    setNewTarget("");
+    setNewCategory("" as any);
+    setNewBanner("");
     setCampaignErrors({});
     setIsNewCampaignModalOpen(true);
   };
@@ -131,10 +160,13 @@ export default function DonationsComponent({
   const handleCreateCampaignSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
+    const numericTarget = parseDotNumber(newTarget);
     const errors: Record<string, string> = {};
-    if (!newTitle.trim()) errors.title = "Judul kampanye wajib diisi";
+    if (!newTitle.trim()) errors.title = "Nama penggalangan/judul wajib diisi";
+    if (!newCategory) errors.category = "Kategori wajib dipilih";
+    if (!newTarget || numericTarget < 1000000) errors.target = "Target donasi wajib diisi (minimal Rp 1.000.000)";
     if (!newDescription.trim()) errors.description = "Deskripsi kampanye wajib diisi";
-    if (!newTarget || newTarget <= 0) errors.target = "Target donasi harus lebih besar dari 0";
+    if (!newBanner) errors.banner = "Banner dokumentasi kampanye wajib diunggah";
 
     if (Object.keys(errors).length > 0) {
       setCampaignErrors(errors);
@@ -146,7 +178,7 @@ export default function DonationsComponent({
     onAddCampaign({
       title: newTitle,
       description: newDescription,
-      targetAmount: Number(newTarget),
+      targetAmount: numericTarget,
       collectedAmount: 0,
       category: newCategory,
       bannerUrl: newBanner,
@@ -369,26 +401,31 @@ export default function DonationsComponent({
 
                 {/* Name */}
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nama Donatur (Isi kosong untuk Anonim)</label>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nama Donatur</label>
                   <input
                     type="text"
                     placeholder="Contoh: Roy Handoko, Shanti..."
                     value={donorName}
                     onChange={(e) => setDonorName(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                      donateErrors.donorName ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {donateErrors.donorName && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{donateErrors.donorName}</span>
+                  )}
                 </div>
 
                 {/* Amount Selection */}
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Jumlah Donasi (Rupiah)</label>
                   <input
-                    type="number"
-                    min="10000"
+                    type="text"
                     value={donationAmount}
-                    onChange={(e) => setDonationAmount(Number(e.target.value))}
+                    onChange={(e) => setDonationAmount(formatNumberWithDot(e.target.value))}
+                    placeholder="Contoh: 100.000"
                     className={`w-full px-3 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-indigo-600 bg-white ${
-                      donateErrors.amount ? "border-red-400 focus:ring-red-500" : "border-slate-200"
+                      donateErrors.amount ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
                     }`}
                   />
                   {donateErrors.amount && (
@@ -420,13 +457,19 @@ export default function DonationsComponent({
                   <select
                     value={paymentMethod}
                     onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-800 ${
+                      donateErrors.paymentMethod ? "border-red-400 focus:ring-red-500" : "border-slate-200"
+                    }`}
                   >
+                    <option value="">-- Pilih Metode Pembayaran --</option>
                     <option value="QRIS (Gopay/OVO/Dana)">QRIS (Gopay / OVO / Dana / LinkAja)</option>
                     <option value="Transfer Bank BCA">Transfer Bank BCA - Mandiri Sion</option>
                     <option value="Transfer Bank Mandiri">Transfer Bank Mandiri - Sion Care</option>
                     <option value="Virtual Account">Virtual Account Bersama</option>
                   </select>
+                  {donateErrors.paymentMethod && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{donateErrors.paymentMethod}</span>
+                  )}
                 </div>
 
                 {/* Prayer / Support message */}
@@ -534,25 +577,31 @@ export default function DonationsComponent({
                   <select
                     value={newCategory}
                     onChange={(e) => setNewCategory(e.target.value as DonationCampaign["category"])}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-800 ${
+                      campaignErrors.category ? "border-red-400 focus:ring-red-500" : "border-slate-200"
+                    }`}
                   >
+                    <option value="">-- Pilih Kategori --</option>
                     <option value="Bencana Alam">Bencana Alam</option>
                     <option value="Pembangunan Gereja">Pembangunan Gereja</option>
                     <option value="Beasiswa Pendidikan">Beasiswa Pendidikan</option>
                     <option value="Kesehatan Pekerja">Kesehatan Pekerja</option>
                     <option value="Lainnya">Lainnya</option>
                   </select>
+                  {campaignErrors.category && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{campaignErrors.category}</span>
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Target Dana (Rupiah)</label>
                   <input
-                    type="number"
-                    min="1000000"
+                    type="text"
                     value={newTarget}
-                    onChange={(e) => setNewTarget(Number(e.target.value))}
+                    onChange={(e) => setNewTarget(formatNumberWithDot(e.target.value))}
+                    placeholder="Contoh: 150.000.000"
                     className={`w-full px-3 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
-                      campaignErrors.target ? "border-red-400 focus:ring-red-500" : "border-slate-200"
+                      campaignErrors.target ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
                     }`}
                   />
                   {campaignErrors.target && (
@@ -562,23 +611,40 @@ export default function DonationsComponent({
               </div>
 
               {/* Banner image selector */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Pilih Tema Banner</label>
-                <div className="grid grid-cols-4 gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
-                  {CAMPAIGN_PRESET_BANNERS.map((url, idx) => {
-                    const isSelected = newBanner === url;
-                    return (
-                      <div 
-                        key={idx}
-                        onClick={() => setNewBanner(url)}
-                        className={`relative aspect-video rounded-lg overflow-hidden cursor-pointer border-2 transition-all ${
-                          isSelected ? "border-indigo-600 scale-105 shadow" : "border-transparent opacity-60"
-                        }`}
+              <div className="space-y-2">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Banner Penggalangan Dana</label>
+                
+                {/* Device Uploader */}
+                <div className="flex items-center space-x-3 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  <div className="flex-1">
+                    <span className="text-[9px] text-slate-400 font-semibold block mb-1">Pilih berkas banner dari device Anda:</span>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={handleBannerFileChange}
+                      className="w-full text-xs text-slate-500 file:mr-3 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[10px] file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 cursor-pointer"
+                    />
+                    {campaignErrors.banner && (
+                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{campaignErrors.banner}</span>
+                    )}
+                  </div>
+                  {newBanner && (
+                    <div className="relative w-16 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0 group">
+                      <img 
+                        src={newBanner} 
+                        alt="Preview Banner" 
+                        onClick={() => setZoomedImage(newBanner)}
+                        className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition-all" 
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setNewBanner("")}
+                        className="absolute inset-0 bg-black/50 text-white text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center z-10"
                       >
-                        <img src={url} alt={`BannerPreset ${idx}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      </div>
-                    );
-                  })}
+                        Hapus
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -628,6 +694,19 @@ export default function DonationsComponent({
             </div>
             <h3 className="font-display font-bold text-sm text-slate-900">Galang Dana Terbit</h3>
             <p className="text-xs text-slate-400 mt-1">Kampanye donasi baru berhasil dipublikasikan.</p>
+          </div>
+        </div>
+      )}
+      {zoomedImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setZoomedImage(null)}>
+          <div className="relative max-w-3xl w-full max-h-[85vh] p-4 flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
+            <button 
+              onClick={() => setZoomedImage(null)}
+              className="absolute top-4 right-4 bg-slate-900/60 hover:bg-slate-900/80 text-white rounded-full p-2 transition-all cursor-pointer z-50"
+            >
+              <X className="h-6 w-6" />
+            </button>
+            <img src={zoomedImage} alt="Zoomed" className="max-w-full max-h-[75vh] object-contain rounded-2xl border border-slate-800" />
           </div>
         </div>
       )}
