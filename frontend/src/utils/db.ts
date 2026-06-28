@@ -149,6 +149,26 @@ export class SionDatabase {
     localStorage.setItem(STORAGE_KEYS.CITIES, JSON.stringify(cities));
   }
 
+  static addCity(city: Omit<City, "id" | "membersCount" | "journalsCount" | "beritaCount" | "jurnalPaCount">): City {
+    const cities = this.getCities();
+    const newCity: City = {
+      ...city,
+      id: "city-" + Date.now(),
+      membersCount: 0,
+      journalsCount: 0,
+      beritaCount: 0,
+      jurnalPaCount: 0
+    };
+    cities.push(newCity);
+    this.saveCities(cities);
+
+    const syncState = this.getSyncState();
+    if (syncState.isOnline) {
+      this.apiRequest("/api/cities", "POST", newCity);
+    }
+    return newCity;
+  }
+
   // --- Discipleship Modules Helpers ---
   static getModules(): DiscipleshipModule[] {
     this.init();

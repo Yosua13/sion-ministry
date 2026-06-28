@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { City, Member, BeritaAcara, JurnalPA, DonationCampaign, SyncState } from "../types";
 
+import { useState } from "react";
+
 interface DashboardProps {
   cities: City[];
   members: Member[];
@@ -22,6 +24,7 @@ interface DashboardProps {
   campaigns: DonationCampaign[];
   syncState: SyncState;
   onNavigateToTab: (tab: string) => void;
+  onAddCity: (city: Omit<City, "id" | "membersCount" | "journalsCount" | "beritaCount" | "jurnalPaCount">) => void;
 }
 
 export default function Dashboard({
@@ -31,8 +34,50 @@ export default function Dashboard({
   jurnalPa,
   campaigns,
   syncState,
-  onNavigateToTab
+  onNavigateToTab,
+  onAddCity
 }: DashboardProps) {
+  // Add City Modal states
+  const [isAddCityOpen, setIsAddCityOpen] = useState(false);
+  const [newCityName, setNewCityName] = useState("");
+  const [newCityRegion, setNewCityRegion] = useState("");
+  const [newCityReachedDate, setNewCityReachedDate] = useState(new Date().toISOString().split("T")[0]);
+  const [newCityWorkersCount, setNewCityWorkersCount] = useState(1);
+  const [cityFormErrors, setCityFormErrors] = useState<Record<string, string>>({});
+  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
+
+  const handleSaveCity = () => {
+    const errors: Record<string, string> = {};
+    if (!newCityName.trim()) errors.name = "Nama kota wajib diisi";
+    if (!newCityRegion.trim()) errors.region = "Wilayah/Provinsi wajib diisi";
+
+    if (Object.keys(errors).length > 0) {
+      setCityFormErrors(errors);
+      return;
+    }
+
+    onAddCity({
+      name: newCityName,
+      region: newCityRegion,
+      reachedDate: newCityReachedDate,
+      workersCount: newCityWorkersCount,
+    });
+
+    setCityFormErrors({});
+    setIsAddCityOpen(false);
+    
+    // Clear inputs
+    setNewCityName("");
+    setNewCityRegion("");
+    setNewCityReachedDate(new Date().toISOString().split("T")[0]);
+    setNewCityWorkersCount(1);
+
+    // Show success banner
+    setShowSuccessAlert(true);
+    setTimeout(() => {
+      setShowSuccessAlert(false);
+    }, 2000);
+  };
   // Aggregate statistics
   const totalCities = cities.length;
   const totalMembers = members.length;
@@ -257,13 +302,21 @@ export default function Dashboard({
                 <h3 className="font-display font-bold text-base text-slate-900">Perkembangan Wilayah Pelayanan</h3>
                 <p className="text-xs text-slate-400 mt-1">Data kota-kota di Indonesia yang telah dijangkau</p>
               </div>
-              <button 
-                onClick={() => onNavigateToTab("members")}
-                className="text-xs text-indigo-600 font-bold hover:text-indigo-500 transition-all flex items-center space-x-1 cursor-pointer"
-              >
-                <span>Lihat Anggota</span>
-                <ArrowRight className="h-3 w-3" />
-              </button>
+              <div className="flex items-center space-x-3">
+                <button 
+                  onClick={() => setIsAddCityOpen(true)}
+                  className="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold px-3 py-1.5 rounded-xl transition-all flex items-center space-x-1 cursor-pointer"
+                >
+                  <span>+ Tambah Kota</span>
+                </button>
+                <button 
+                  onClick={() => onNavigateToTab("members")}
+                  className="text-xs text-indigo-600 font-bold hover:text-indigo-500 transition-all flex items-center space-x-1 cursor-pointer"
+                >
+                  <span>Lihat Anggota</span>
+                  <ArrowRight className="h-3 w-3" />
+                </button>
+              </div>
             </div>
 
             <div className="mt-4 overflow-x-auto">
@@ -355,6 +408,95 @@ export default function Dashboard({
         </div>
 
       </div>
+
+      {isAddCityOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 border border-slate-100 max-w-sm w-full material-shadow-3 animate-scale-up">
+            <h3 className="font-display font-bold text-base text-slate-900 mb-4">Tambah Kota Pelayanan</h3>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nama Kota</label>
+                <input 
+                  type="text" 
+                  value={newCityName}
+                  onChange={(e) => setNewCityName(e.target.value)}
+                  placeholder="Contoh: Malang, Jayapura"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                />
+                {cityFormErrors.name && (
+                  <span className="text-red-500 text-[10px] mt-1 block font-semibold">{cityFormErrors.name}</span>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Wilayah / Provinsi</label>
+                <input 
+                  type="text" 
+                  value={newCityRegion}
+                  onChange={(e) => setNewCityRegion(e.target.value)}
+                  placeholder="Contoh: Jawa Timur, Papua"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                />
+                {cityFormErrors.region && (
+                  <span className="text-red-500 text-[10px] mt-1 block font-semibold">{cityFormErrors.region}</span>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tanggal Mulai Dijangkau</label>
+                <input 
+                  type="date" 
+                  value={newCityReachedDate}
+                  onChange={(e) => setNewCityReachedDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Jumlah Pekerja</label>
+                <input 
+                  type="number" 
+                  min="0"
+                  value={newCityWorkersCount}
+                  onChange={(e) => setNewCityWorkersCount(Number(e.target.value))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                />
+              </div>
+            </div>
+
+            <div className="flex space-x-2 mt-6">
+              <button 
+                onClick={() => {
+                  setIsAddCityOpen(false);
+                  setCityFormErrors({});
+                }}
+                className="flex-1 py-2 border border-slate-200 text-slate-500 hover:bg-slate-50 font-semibold rounded-xl text-xs cursor-pointer"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={handleSaveCity}
+                className="flex-1 py-2 bg-indigo-600 text-white hover:bg-indigo-500 font-semibold rounded-xl text-xs cursor-pointer"
+              >
+                Simpan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSuccessAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col items-center max-w-xs w-full text-center material-shadow-3">
+            <div className="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
+              <Globe className="h-6 w-6" />
+            </div>
+            <h3 className="font-display font-bold text-sm text-slate-900">Kota Berhasil Ditambahkan</h3>
+            <p className="text-xs text-slate-400 mt-1">Kota baru telah terdaftar di database Sion Ministry.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
