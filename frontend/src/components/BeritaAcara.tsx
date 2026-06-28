@@ -62,11 +62,11 @@ export default function BeritaAcaraComponent({
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formTitle, setFormTitle] = useState("");
-  const [formDate, setFormDate] = useState(new Date().toISOString().split("T")[0]);
+  const [formDate, setFormDate] = useState("");
   const [formCityId, setFormCityId] = useState("");
   const [formWorker, setFormWorker] = useState("");
-  const [formType, setFormType] = useState<BeritaAcara["activityType"]>("Sion Raya (SR)");
-  const [formAttendees, setFormAttendees] = useState<number>(10);
+  const [formType, setFormType] = useState<BeritaAcara["activityType"]>("" as any);
+  const [formAttendees, setFormAttendees] = useState<number>("" as any);
   const [formDescription, setFormDescription] = useState("");
   
   // Multiple images state for the upload form
@@ -76,6 +76,7 @@ export default function BeritaAcaraComponent({
   // Validation and alert states
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
@@ -144,13 +145,13 @@ export default function BeritaAcaraComponent({
 
   const handleOpenAddModal = () => {
     setFormTitle("");
-    setFormDate(new Date().toISOString().split("T")[0]);
-    setFormCityId(cities[0]?.id || "");
-    setFormWorker("Yosua Reynaldi");
-    setFormType("Sion Raya (SR)");
-    setFormAttendees(25);
+    setFormDate("");
+    setFormCityId("");
+    setFormWorker("");
+    setFormType("" as any);
+    setFormAttendees("" as any);
     setFormDescription("");
-    setFormImages([PRESET_IMAGES[0]]); // default with 1 image
+    setFormImages([]); // No preset images! Start empty.
     setErrors({});
     setIsModalOpen(true);
   };
@@ -202,8 +203,14 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
     
     // Inline validation
     const tempErrors: Record<string, string> = {};
-    if (!formTitle.trim()) tempErrors.title = "Judul berita acara wajib diisi";
+    if (!formTitle.trim()) tempErrors.title = "Judul kegiatan wajib diisi";
+    if (!formType) tempErrors.type = "Jenis kegiatan wajib dipilih";
+    if (!formDate) tempErrors.date = "Tanggal kegiatan wajib diisi";
     if (!formCityId) tempErrors.cityId = "Pos kota pelayanan wajib dipilih";
+    if (!formAttendees || Number(formAttendees) <= 0) tempErrors.attendees = "Jumlah jemaat hadir wajib diisi (minimal 1)";
+    if (!formWorker.trim()) tempErrors.workerName = "Nama pelayan/pekerja wajib diisi";
+    if (!formDescription.trim()) tempErrors.description = "Deskripsi kegiatan pelayanan wajib diisi";
+    if (formImages.length === 0) tempErrors.images = "Dokumentasi foto wajib diunggah (minimal 1 foto)";
 
     if (Object.keys(tempErrors).length > 0) {
       setErrors(tempErrors);
@@ -223,8 +230,8 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
       workerName: formWorker,
       activityType: formType,
       attendeesCount: Number(formAttendees),
-      description: formDescription || "Laporan kegiatan pelayanan Sion Ministry terlaksana dengan baik.",
-      images: formImages.length > 0 ? formImages : [PRESET_IMAGES[0]]
+      description: formDescription,
+      images: formImages
     });
 
     setIsModalOpen(false);
@@ -476,8 +483,11 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
                   <select
                     value={formType}
                     onChange={(e) => setFormType(e.target.value as BeritaAcara["activityType"])}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-800 ${
+                      errors.type ? "border-red-400 focus:ring-red-500" : "border-slate-200"
+                    }`}
                   >
+                    <option value="">-- Pilih Jenis Kegiatan --</option>
                     <option value="Sion Raya (SR)">Sion Raya (SR)</option>
                     <option value="Persekutuan Doa Sion (PDS)">Persekutuan Doa Sion (PDS)</option>
                     <option value="Komsel">Komsel</option>
@@ -485,17 +495,24 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
                     <option value="Doa Keliling">Doa Keliling</option>
                     <option value="Lainnya">Lainnya</option>
                   </select>
+                  {errors.type && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.type}</span>
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tanggal</label>
                   <input
                     type="date"
-                    required
                     value={formDate}
                     onChange={(e) => setFormDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                      errors.date ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.date && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.date}</span>
+                  )}
                 </div>
               </div>
 
@@ -534,53 +551,39 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
                   <input
                     type="number"
                     min="1"
-                    required
                     value={formAttendees}
-                    onChange={(e) => setFormAttendees(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    onChange={(e) => setFormAttendees(e.target.value === "" ? ("" as any) : Number(e.target.value))}
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                      errors.attendees ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.attendees && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.attendees}</span>
+                  )}
                 </div>
 
                 <div className="col-span-1">
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nama Pelayan/Pekerja</label>
                   <input
                     type="text"
-                    required
                     value={formWorker}
                     onChange={(e) => setFormWorker(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                      errors.workerName ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.workerName && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.workerName}</span>
+                  )}
                 </div>
               </div>
 
               {/* Image Upload Block */}
               <div className="space-y-2">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Dokumentasi Foto (Bisa pilih preset & unggah dari device)</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Dokumentasi Foto (Unggah dari Device)</label>
                 
-                {/* 1. Preset Images Selection */}
+                {/* Device Uploader */}
                 <div className="space-y-1">
-                  <span className="text-[9px] text-slate-400 font-semibold block">Pilih dari galeri preset:</span>
-                  <div className="flex gap-2 overflow-x-auto p-2.5 bg-slate-50 rounded-xl border border-slate-100">
-                    {PRESET_IMAGES.map((url, idx) => {
-                      const isSelected = formImages.includes(url);
-                      return (
-                        <div 
-                          key={idx} 
-                          onClick={() => handleAddPresetImage(url)}
-                          className={`relative w-12 h-10 rounded-lg overflow-hidden cursor-pointer shrink-0 border-2 transition-all hover:scale-105 ${
-                            isSelected ? "border-indigo-600 scale-95" : "border-transparent opacity-60"
-                          }`}
-                        >
-                          <img src={url} alt={`Preset ${idx}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 2. Device Uploader */}
-                <div className="space-y-1">
-                  <span className="text-[9px] text-slate-400 font-semibold block">Atau pilih berkas foto dari device Anda:</span>
                   <input 
                     type="file" 
                     multiple 
@@ -588,20 +591,28 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
                     onChange={handleFileChange}
                     className="w-full text-xs text-slate-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-[11px] file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 cursor-pointer"
                   />
+                  {errors.images && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.images}</span>
+                  )}
                 </div>
 
-                {/* 3. Selected Images Previews */}
+                {/* Selected Images Previews */}
                 {formImages.length > 0 && (
                   <div className="space-y-1">
-                    <span className="text-[9px] text-slate-400 font-semibold block">Foto Terpilih ({formImages.length}):</span>
+                    <span className="text-[9px] text-slate-400 font-semibold block">Foto Terpilih ({formImages.length}) - Klik untuk memperbesar:</span>
                     <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 p-2 bg-slate-50 rounded-xl border border-slate-100">
                       {formImages.map((url, idx) => (
                         <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 group">
-                          <img src={url} alt={`Selected ${idx}`} className="w-full h-full object-cover" />
+                          <img 
+                            src={url} 
+                            alt={`Selected ${idx}`} 
+                            onClick={() => setZoomedImage(url)}
+                            className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition-all" 
+                          />
                           <button
                             type="button"
                             onClick={() => handleRemoveImage(idx)}
-                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600 transition-all opacity-85 hover:opacity-100"
+                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600 transition-all opacity-85 hover:opacity-100 z-10"
                           >
                             <X className="h-3 w-3" />
                           </button>
@@ -631,13 +642,17 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
                   </button>
                 </div>
                 <textarea
-                  required
                   rows={4}
                   placeholder="Misalkan: Ibadah lancar dipenuhi kasih Allah. Doakan agar jemaat terus bertekun dalam kelompok sel pemuridan minggu depan..."
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                  className={`w-full px-3 py-2 border rounded-xl text-xs font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                    errors.description ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                  }`}
                 />
+                {errors.description && (
+                  <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.description}</span>
+                )}
               </div>
 
               {/* Submit / Cancel Buttons */}
@@ -669,6 +684,19 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
             </div>
             <h3 className="font-display font-bold text-sm text-slate-900">Laporan Berhasil Disimpan</h3>
             <p className="text-xs text-slate-400 mt-1">Berita acara pelayanan telah ditambahkan ke database.</p>
+          </div>
+        </div>
+      )}
+      {zoomedImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setZoomedImage(null)}>
+          <div className="relative max-w-3xl w-full max-h-[85vh] p-4 flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
+            <button 
+              onClick={() => setZoomedImage(null)}
+              className="absolute top-4 right-4 bg-slate-900/60 hover:bg-slate-900/80 text-white rounded-full p-2 transition-all cursor-pointer z-50"
+            >
+              <X className="h-6 w-6" />
+            </button>
+            <img src={zoomedImage} alt="Zoomed" className="max-w-full max-h-[75vh] object-contain rounded-2xl border border-slate-800" />
           </div>
         </div>
       )}

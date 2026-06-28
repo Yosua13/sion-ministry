@@ -49,16 +49,17 @@ export default function JurnalPAComponent({
   const [formScripture, setFormScripture] = useState("");
   const [formFocus, setFormFocus] = useState("");
   const [formMenteeName, setFormMenteeName] = useState("");
-  const [formMentorName, setFormMentorName] = useState("Yosua Reynaldi");
-  const [formDate, setFormDate] = useState(new Date().toISOString().split("T")[0]);
+  const [formMentorName, setFormMentorName] = useState("");
+  const [formDate, setFormDate] = useState("");
   const [formCityId, setFormCityId] = useState("");
-  const [formImage, setFormImage] = useState(PA_PRESET_IMAGES[0]);
+  const [formImage, setFormImage] = useState("");
   const [formNotes, setFormNotes] = useState("");
   const [isAiDrafting, setIsAiDrafting] = useState(false);
 
   // Validation and alert states
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -92,10 +93,10 @@ export default function JurnalPAComponent({
     setFormScripture("");
     setFormFocus("");
     setFormMenteeName("");
-    setFormMentorName("Yosua Reynaldi");
-    setFormDate(new Date().toISOString().split("T")[0]);
-    setFormCityId(cities[0]?.id || "");
-    setFormImage(PA_PRESET_IMAGES[0]);
+    setFormMentorName("");
+    setFormDate("");
+    setFormCityId("");
+    setFormImage("");
     setFormNotes("");
     setErrors({});
     setIsModalOpen(true);
@@ -135,9 +136,14 @@ export default function JurnalPAComponent({
     // Inline validation
     const tempErrors: Record<string, string> = {};
     if (!formMenteeName.trim()) tempErrors.menteeName = "Nama murid/mentee wajib diisi";
+    if (!formMentorName.trim()) tempErrors.mentorName = "Nama mentor/pekerja wajib diisi";
     if (!formTheme.trim()) tempErrors.theme = "Tema bimbingan PA wajib diisi";
     if (!formScripture.trim()) tempErrors.scripture = "Nats Alkitab (kitab/pasal) wajib diisi";
     if (!formCityId) tempErrors.cityId = "Pos kota pelayanan wajib dipilih";
+    if (!formDate) tempErrors.date = "Tanggal bimbingan wajib diisi";
+    if (!formFocus.trim()) tempErrors.focus = "Fokus PA wajib diisi";
+    if (!formNotes.trim()) tempErrors.notes = "Catatan evaluasi bimbingan wajib diisi";
+    if (!formImage) tempErrors.image = "Foto dokumentasi bimbingan wajib diunggah";
 
     if (Object.keys(tempErrors).length > 0) {
       setErrors(tempErrors);
@@ -152,14 +158,14 @@ export default function JurnalPAComponent({
     onAddJurnal({
       theme: formTheme,
       scripture: formScripture,
-      focus: formFocus || "Pertumbuhan Karakter Kristen",
+      focus: formFocus,
       menteeName: formMenteeName,
       mentorName: formMentorName,
       date: formDate,
       cityId: formCityId,
       cityName,
       image: formImage,
-      notes: formNotes || "Kegiatan Penelaahan Alkitab (PA) terlaksana secara intim dan mendalam."
+      notes: formNotes
     });
 
     setIsModalOpen(false);
@@ -337,11 +343,15 @@ export default function JurnalPAComponent({
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Mentor/Pekerja</label>
                   <input
                     type="text"
-                    required
                     value={formMentorName}
                     onChange={(e) => setFormMentorName(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                      errors.mentorName ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.mentorName && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.mentorName}</span>
+                  )}
                 </div>
               </div>
 
@@ -416,44 +426,35 @@ export default function JurnalPAComponent({
                     placeholder="Misal: Ketaatan, Iman, Karakter"
                     value={formFocus}
                     onChange={(e) => setFormFocus(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                      errors.focus ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.focus && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.focus}</span>
+                  )}
                 </div>
 
                 <div className="col-span-1">
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tanggal</label>
                   <input
                     type="date"
-                    required
                     value={formDate}
                     onChange={(e) => setFormDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                      errors.date ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.date && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.date}</span>
+                  )}
                 </div>
               </div>
 
-              {/* Image documentation picker */}
+              {/* Image documentation uploader */}
               <div className="space-y-2">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Foto Dokumentasi Sesi PA (Pilih preset atau unggah)</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Foto Dokumentasi Sesi PA</label>
                 
-                {/* Preset List */}
-                <div className="flex gap-2 overflow-x-auto p-2 bg-slate-50 rounded-xl border border-slate-100/80">
-                  {PA_PRESET_IMAGES.map((url, idx) => {
-                    const isSelected = formImage === url;
-                    return (
-                      <div 
-                        key={idx}
-                        onClick={() => setFormImage(url)}
-                        className={`relative w-12 h-10 rounded-lg overflow-hidden cursor-pointer shrink-0 border-2 transition-all ${
-                          isSelected ? "border-indigo-600 scale-105 shadow" : "border-transparent opacity-60"
-                        }`}
-                      >
-                        <img src={url} alt={`PA Preset ${idx}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      </div>
-                    );
-                  })}
-                </div>
-
                 {/* Device Uploader */}
                 <div className="flex items-center space-x-3 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                   <div className="flex-1">
@@ -464,14 +465,22 @@ export default function JurnalPAComponent({
                       onChange={handleFileChange}
                       className="w-full text-xs text-slate-500 file:mr-3 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[10px] file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 cursor-pointer"
                     />
+                    {errors.image && (
+                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.image}</span>
+                    )}
                   </div>
                   {formImage && (
                     <div className="relative w-16 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0 group">
-                      <img src={formImage} alt="Preview" className="w-full h-full object-cover" />
+                      <img 
+                        src={formImage} 
+                        alt="Preview" 
+                        onClick={() => setZoomedImage(formImage)}
+                        className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition-all" 
+                      />
                       <button
                         type="button"
                         onClick={() => setFormImage("")}
-                        className="absolute inset-0 bg-black/50 text-white text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center"
+                        className="absolute inset-0 bg-black/50 text-white text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center z-10"
                       >
                         Hapus
                       </button>
@@ -499,13 +508,17 @@ export default function JurnalPAComponent({
                   </button>
                 </div>
                 <textarea
-                  required
                   rows={4}
                   placeholder="Ceritakan jalannya PA. Apa komitmen iman mentee Anda dari pembacaan alkitab kali ini? Tulis di sini..."
                   value={formNotes}
                   onChange={(e) => setFormNotes(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                  className={`w-full px-3 py-2 border rounded-xl text-xs font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                    errors.notes ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                  }`}
                 />
+                {errors.notes && (
+                  <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.notes}</span>
+                )}
               </div>
 
               {/* Submit / Cancel Buttons */}
@@ -537,6 +550,19 @@ export default function JurnalPAComponent({
             </div>
             <h3 className="font-display font-bold text-sm text-slate-900">Jurnal Berhasil Disimpan</h3>
             <p className="text-xs text-slate-400 mt-1">Jurnal pendampingan PA telah ditambahkan ke database.</p>
+          </div>
+        </div>
+      )}
+      {zoomedImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setZoomedImage(null)}>
+          <div className="relative max-w-3xl w-full max-h-[85vh] p-4 flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
+            <button 
+              onClick={() => setZoomedImage(null)}
+              className="absolute top-4 right-4 bg-slate-900/60 hover:bg-slate-900/80 text-white rounded-full p-2 transition-all cursor-pointer z-50"
+            >
+              <X className="h-6 w-6" />
+            </button>
+            <img src={zoomedImage} alt="Zoomed" className="max-w-full max-h-[75vh] object-contain rounded-2xl border border-slate-800" />
           </div>
         </div>
       )}
