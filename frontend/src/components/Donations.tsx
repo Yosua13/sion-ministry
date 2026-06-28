@@ -56,6 +56,11 @@ export default function DonationsComponent({
   const [newCategory, setNewCategory] = useState<DonationCampaign["category"]>("Beasiswa Pendidikan");
   const [newBanner, setNewBanner] = useState(CAMPAIGN_PRESET_BANNERS[0]);
 
+  // Validation and alert states
+  const [donateErrors, setDonateErrors] = useState<Record<string, string>>({});
+  const [campaignErrors, setCampaignErrors] = useState<Record<string, string>>({});
+  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
+
   const formatRupiah = (amount: number) => {
     return new Intl.NumberFormat("id-ID", {
       style: "currency",
@@ -71,6 +76,7 @@ export default function DonationsComponent({
     setDonorMessage("");
     setPaymentMethod("QRIS (Gopay/OVO/Dana)");
     setShowThankYou(false);
+    setDonateErrors({});
   };
 
   const handleSelectPresetAmount = (amount: number) => {
@@ -79,7 +85,20 @@ export default function DonationsComponent({
 
   const handleDonateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCampaign || !donationAmount || donationAmount <= 0) return;
+    
+    const errors: Record<string, string> = {};
+    if (!donationAmount || donationAmount <= 0) {
+      errors.amount = "Jumlah donasi harus lebih besar dari 0";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setDonateErrors(errors);
+      return;
+    }
+
+    setDonateErrors({});
+
+    if (!selectedCampaign) return;
 
     onAddDonationRecord({
       campaignId: selectedCampaign.id,
@@ -96,11 +115,33 @@ export default function DonationsComponent({
   const handleCloseDonateModal = () => {
     setSelectedCampaign(null);
     setShowThankYou(false);
+    setDonateErrors({});
+  };
+
+  const handleOpenNewCampaignModal = () => {
+    setNewTitle("");
+    setNewDescription("");
+    setNewTarget(10000000);
+    setNewCategory("Beasiswa Pendidikan");
+    setNewBanner(CAMPAIGN_PRESET_BANNERS[0]);
+    setCampaignErrors({});
+    setIsNewCampaignModalOpen(true);
   };
 
   const handleCreateCampaignSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle || !newDescription || !newTarget) return;
+    
+    const errors: Record<string, string> = {};
+    if (!newTitle.trim()) errors.title = "Judul kampanye wajib diisi";
+    if (!newDescription.trim()) errors.description = "Deskripsi kampanye wajib diisi";
+    if (!newTarget || newTarget <= 0) errors.target = "Target donasi harus lebih besar dari 0";
+
+    if (Object.keys(errors).length > 0) {
+      setCampaignErrors(errors);
+      return;
+    }
+
+    setCampaignErrors({});
 
     onAddCampaign({
       title: newTitle,
@@ -114,6 +155,12 @@ export default function DonationsComponent({
     });
 
     setIsNewCampaignModalOpen(false);
+
+    // Show centered success alert
+    setShowSuccessAlert(true);
+    setTimeout(() => {
+      setShowSuccessAlert(false);
+    }, 2000);
   };
 
   // Filter donation records for feed
@@ -138,7 +185,7 @@ export default function DonationsComponent({
         </div>
         
         <button
-          onClick={() => setIsNewCampaignModalOpen(true)}
+          onClick={handleOpenNewCampaignModal}
           className="flex items-center justify-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-5 py-3 rounded-xl transition-all shadow-md self-start md:self-auto cursor-pointer"
         >
           <Plus className="h-4 w-4" />
@@ -338,11 +385,15 @@ export default function DonationsComponent({
                   <input
                     type="number"
                     min="10000"
-                    required
                     value={donationAmount}
                     onChange={(e) => setDonationAmount(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-indigo-600 bg-white"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-indigo-600 bg-white ${
+                      donateErrors.amount ? "border-red-400 focus:ring-red-500" : "border-slate-200"
+                    }`}
                   />
+                  {donateErrors.amount && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{donateErrors.amount}</span>
+                  )}
 
                   {/* Preset Quick selections */}
                   <div className="grid grid-cols-4 gap-2 mt-2">
@@ -465,12 +516,16 @@ export default function DonationsComponent({
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nama Penggalangan Dana / Judul</label>
                 <input
                   type="text"
-                  required
                   placeholder="Contoh: Bantuan Sembako Banjir Pos Luwu, Beasiswa Siswa Terpencil..."
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                  className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                    campaignErrors.title ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                  }`}
                 />
+                {campaignErrors.title && (
+                  <span className="text-red-500 text-[10px] mt-1 block font-semibold">{campaignErrors.title}</span>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -494,11 +549,15 @@ export default function DonationsComponent({
                   <input
                     type="number"
                     min="1000000"
-                    required
                     value={newTarget}
                     onChange={(e) => setNewTarget(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                      campaignErrors.target ? "border-red-400 focus:ring-red-500" : "border-slate-200"
+                    }`}
                   />
+                  {campaignErrors.target && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{campaignErrors.target}</span>
+                  )}
                 </div>
               </div>
 
@@ -526,13 +585,17 @@ export default function DonationsComponent({
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Deskripsi & Rincian Penggunaan Dana</label>
                 <textarea
-                  required
                   rows={3}
                   placeholder="Rincikan mengenai kebutuhan dana, pos penyaluran, serta siapa saja yang akan menerima bantuan ini..."
                   value={newDescription}
                   onChange={(e) => setNewDescription(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                  className={`w-full px-3 py-2 border rounded-xl text-xs font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                    campaignErrors.description ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                  }`}
                 />
+                {campaignErrors.description && (
+                  <span className="text-red-500 text-[10px] mt-1 block font-semibold">{campaignErrors.description}</span>
+                )}
               </div>
 
               {/* Buttons */}
@@ -557,6 +620,17 @@ export default function DonationsComponent({
         </div>
       )}
 
+      {showSuccessAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col items-center max-w-xs w-full text-center material-shadow-3 animate-scale-up">
+            <div className="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
+              <Coins className="h-6 w-6" />
+            </div>
+            <h3 className="font-display font-bold text-sm text-slate-900">Galang Dana Terbit</h3>
+            <p className="text-xs text-slate-400 mt-1">Kampanye donasi baru berhasil dipublikasikan.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

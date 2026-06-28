@@ -56,6 +56,21 @@ export default function JurnalPAComponent({
   const [formNotes, setFormNotes] = useState("");
   const [isAiDrafting, setIsAiDrafting] = useState(false);
 
+  // Validation and alert states
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setFormImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
   // Filter Jurnal PA
   const filteredJurnal = useMemo(() => {
     return jurnalList.filter((j) => {
@@ -82,6 +97,7 @@ export default function JurnalPAComponent({
     setFormCityId(cities[0]?.id || "");
     setFormImage(PA_PRESET_IMAGES[0]);
     setFormNotes("");
+    setErrors({});
     setIsModalOpen(true);
   };
 
@@ -93,25 +109,19 @@ export default function JurnalPAComponent({
 
     setIsAiDrafting(true);
     try {
-      const promptText = `Saya seorang mentor pemuridan di Sion Ministry. Saya baru saja melakukan penelaahan alkitab (PA / Pemuridan) bersama murid saya bernama "${formMenteeName || "Mentee"}". 
-Tema diskusi kami adalah "${formTheme}" berdasarkan nats alkitab "${formScripture}". Fokus pembahasannya adalah "${formFocus || "pembentukan karakter rohani"}".
-Tolong susunkan draf catatan pemuridan yang rapi, padat (2-3 kalimat), berfokus pada aplikasi praktis firman Tuhan, serta doa kelanjutan bagi murid. Berikan teks catatannya saja secara santun dan teologis tanpa pembuka tambahan.`;
-
-      const response = await fetch("/api/gemini/assistant", {
+      const prompt = `Tema PA: "${formTheme}". Nats Alkitab: "${formScripture}". Nama murid/mentee: "${formMenteeName || "Mentee"}". Fokus: "${formFocus || "Pertumbuhan Rohani"}". Tolong buatkan catatan evaluasi rohani pendampingan Kristen yang profesional, mendalam, membakar semangat iman, dan detail dalam bahasa Indonesia.`;
+      const response = await fetch("/api/ai/draft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: promptText,
-          systemInstruction: "Anda adalah teolog pemuridan Sion Ministry Indonesia yang ahli menyusun catatan pendampingan rohani praktis untuk memperlengkapi murid-murid Kristus."
-        })
+        body: JSON.stringify({ prompt }),
       });
-
-      if (!response.ok) throw new Error();
-      const data = await response.json();
-      if (data.text) {
+      if (response.ok) {
+        const data = await response.json();
         setFormNotes(data.text);
+      } else {
+        throw new Error("API error");
       }
-    } catch {
+    } catch (err) {
       alert("AI Sion sedang sibuk. Menghasilkan refleksi bimbingan pemuridan otomatis...");
       setFormNotes(`Bersyukur atas bimbingan hari ini mengenai "${formTheme}" (${formScripture}). Bersama ${formMenteeName || "Mentee"}, kami merenungkan pentingnya menghidupi kebenaran ini secara riil. Pokok doa difokuskan agar benih firman ini bertumbuh lebat dan berbuah dalam ketaatan murid.`);
     } finally {
@@ -121,10 +131,20 @@ Tolong susunkan draf catatan pemuridan yang rapi, padat (2-3 kalimat), berfokus 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formTheme || !formScripture || !formMenteeName || !formCityId) {
-      alert("Nama Murid, Tema PA, Ayat Alkitab, dan Kota wajib diisi!");
+    
+    // Inline validation
+    const tempErrors: Record<string, string> = {};
+    if (!formMenteeName.trim()) tempErrors.menteeName = "Nama murid/mentee wajib diisi";
+    if (!formTheme.trim()) tempErrors.theme = "Tema bimbingan PA wajib diisi";
+    if (!formScripture.trim()) tempErrors.scripture = "Nats Alkitab (kitab/pasal) wajib diisi";
+    if (!formCityId) tempErrors.cityId = "Pos kota pelayanan wajib dipilih";
+
+    if (Object.keys(tempErrors).length > 0) {
+      setErrors(tempErrors);
       return;
     }
+
+    setErrors({});
 
     const cityObj = cities.find(c => c.id === formCityId);
     const cityName = cityObj ? cityObj.name : "";
@@ -143,6 +163,12 @@ Tolong susunkan draf catatan pemuridan yang rapi, padat (2-3 kalimat), berfokus 
     });
 
     setIsModalOpen(false);
+
+    // Trigger success alert
+    setShowSuccessAlert(true);
+    setTimeout(() => {
+      setShowSuccessAlert(false);
+    }, 2000);
   };
 
   return (
@@ -295,12 +321,16 @@ Tolong susunkan draf catatan pemuridan yang rapi, padat (2-3 kalimat), berfokus 
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nama Mentee/Murid</label>
                   <input
                     type="text"
-                    required
                     placeholder="Misal: Roy, Handoko..."
                     value={formMenteeName}
                     onChange={(e) => setFormMenteeName(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                      errors.menteeName ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.menteeName && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.menteeName}</span>
+                  )}
                 </div>
 
                 <div>
@@ -320,24 +350,32 @@ Tolong susunkan draf catatan pemuridan yang rapi, padat (2-3 kalimat), berfokus 
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tema PA (Pembahasan)</label>
                   <input
                     type="text"
-                    required
                     placeholder="Misal: Kasih Karunia Allah, Melayani Sesama..."
                     value={formTheme}
                     onChange={(e) => setFormTheme(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                      errors.theme ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.theme && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.theme}</span>
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Ayat Alkitab / Nats</label>
                   <input
                     type="text"
-                    required
                     placeholder="Misal: Matius 28:19-20, Efesus 2:8-9"
                     value={formScripture}
                     onChange={(e) => setFormScripture(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                      errors.scripture ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.scripture && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.scripture}</span>
+                  )}
                 </div>
               </div>
 
@@ -347,12 +385,28 @@ Tolong susunkan draf catatan pemuridan yang rapi, padat (2-3 kalimat), berfokus 
                   <select
                     value={formCityId}
                     onChange={(e) => setFormCityId(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-700"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-700 ${
+                      errors.cityId ? "border-red-400 focus:ring-red-500" : "border-slate-200"
+                    }`}
                   >
-                    {cities.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
+                    {cities.length === 0 ? (
+                      <option value="">-- Tidak ada kota --</option>
+                    ) : (
+                      <>
+                        <option value="">-- Pilih --</option>
+                        {cities.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </>
+                    )}
                   </select>
+                  {cities.length === 0 ? (
+                    <span className="text-amber-500 text-[9px] mt-1 block leading-tight font-semibold">
+                      Kosong! Tambah kota di Dashboard dahulu.
+                    </span>
+                  ) : errors.cityId && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.cityId}</span>
+                  )}
                 </div>
 
                 <div className="col-span-1">
@@ -378,18 +432,19 @@ Tolong susunkan draf catatan pemuridan yang rapi, padat (2-3 kalimat), berfokus 
                 </div>
               </div>
 
-              {/* Single Image documentation picker */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Foto Dokumentasi Sesi PA</label>
-                <div className="flex gap-2.5 overflow-x-auto p-2.5 bg-slate-50 rounded-2xl border border-slate-100/80">
+              {/* Image documentation picker */}
+              <div className="space-y-2">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Foto Dokumentasi Sesi PA (Pilih preset atau unggah)</label>
+                
+                {/* Preset List */}
+                <div className="flex gap-2 overflow-x-auto p-2 bg-slate-50 rounded-xl border border-slate-100/80">
                   {PA_PRESET_IMAGES.map((url, idx) => {
                     const isSelected = formImage === url;
                     return (
                       <div 
                         key={idx}
-                        type="button"
                         onClick={() => setFormImage(url)}
-                        className={`relative w-16 h-12 rounded-lg overflow-hidden cursor-pointer shrink-0 border-2 transition-all ${
+                        className={`relative w-12 h-10 rounded-lg overflow-hidden cursor-pointer shrink-0 border-2 transition-all ${
                           isSelected ? "border-indigo-600 scale-105 shadow" : "border-transparent opacity-60"
                         }`}
                       >
@@ -397,6 +452,31 @@ Tolong susunkan draf catatan pemuridan yang rapi, padat (2-3 kalimat), berfokus 
                       </div>
                     );
                   })}
+                </div>
+
+                {/* Device Uploader */}
+                <div className="flex items-center space-x-3 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  <div className="flex-1">
+                    <span className="text-[9px] text-slate-400 font-semibold block mb-1">Pilih berkas dari device Anda:</span>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={handleFileChange}
+                      className="w-full text-xs text-slate-500 file:mr-3 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[10px] file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 cursor-pointer"
+                    />
+                  </div>
+                  {formImage && (
+                    <div className="relative w-16 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0 group">
+                      <img src={formImage} alt="Preview" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setFormImage("")}
+                        className="absolute inset-0 bg-black/50 text-white text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center"
+                      >
+                        Hapus
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -449,7 +529,17 @@ Tolong susunkan draf catatan pemuridan yang rapi, padat (2-3 kalimat), berfokus 
           </div>
         </div>
       )}
-
+      {showSuccessAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col items-center max-w-xs w-full text-center material-shadow-3 animate-scale-up">
+            <div className="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
+              <BookMarked className="h-6 w-6" />
+            </div>
+            <h3 className="font-display font-bold text-sm text-slate-900">Jurnal Berhasil Disimpan</h3>
+            <p className="text-xs text-slate-400 mt-1">Jurnal pendampingan PA telah ditambahkan ke database.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
