@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS job_applications;
+DROP TABLE IF EXISTS job_opportunities;
+DROP TABLE IF EXISTS discipleship_links;
+DROP TABLE IF EXISTS donation_records;
+DROP TABLE IF EXISTS donation_campaigns;
+DROP TABLE IF EXISTS jurnal_pas;
+DROP TABLE IF EXISTS berita_acaras;
+DROP TABLE IF EXISTS members;
+DROP TABLE IF EXISTS discipleship_modules;
+DROP TABLE IF EXISTS cities;
