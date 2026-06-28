@@ -48,12 +48,68 @@ export default function App() {
     setSyncState(SionDatabase.getSyncState());
   };
 
+  // Helper to map pathname to tab name
+  const getTabFromPath = (path: string): string => {
+    switch (path) {
+      case "/":
+      case "/dashboard": return "dashboard";
+      case "/modules": return "modules";
+      case "/members": return "members";
+      case "/berita": return "berita";
+      case "/jurnal": return "jurnal_pa";
+      case "/donasi": return "donasi";
+      case "/links": return "links";
+      case "/pekerjaan": return "pekerjaan";
+      case "/ai": return "ai";
+      default: return "dashboard";
+    }
+  };
+
+  // Helper to map tab name to pathname
+  const getPathFromTab = (tab: string): string => {
+    switch (tab) {
+      case "dashboard": return "/dashboard";
+      case "modules": return "/modules";
+      case "members": return "/members";
+      case "berita": return "/berita";
+      case "jurnal_pa": return "/jurnal";
+      case "donasi": return "/donasi";
+      case "links": return "/links";
+      case "pekerjaan": return "/pekerjaan";
+      case "ai": return "/ai";
+      default: return "/dashboard";
+    }
+  };
+
+  const changeTab = (tab: string) => {
+    setActiveTab(tab);
+    const newPath = getPathFromTab(tab);
+    if (window.location.pathname !== newPath) {
+      window.history.pushState(null, "", newPath);
+    }
+  };
+
+  const handleAddCity = (city: Omit<City, "id" | "membersCount" | "journalsCount" | "beritaCount" | "jurnalPaCount">) => {
+    SionDatabase.addCity(city);
+    refreshData();
+  };
+
   useEffect(() => {
+    // Detect initial tab from path
+    const initialTab = getTabFromPath(window.location.pathname);
+    setActiveTab(initialTab);
+
     refreshData();
     // Fetch fresh data from backend if online on startup
     SionDatabase.fetchFromCloud().then(() => {
       refreshData();
     });
+
+    const handlePopState = () => {
+      setActiveTab(getTabFromPath(window.location.pathname));
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   // Listen to browser network changes to automatically sync or flag status
@@ -189,9 +245,10 @@ export default function App() {
             campaigns={campaigns}
             syncState={syncState}
             onNavigateToTab={(tab) => {
-              setActiveTab(tab);
+              changeTab(tab);
               setMobileMenuOpen(false);
             }}
+            onAddCity={handleAddCity}
           />
         );
       case "modules":
@@ -272,7 +329,7 @@ export default function App() {
   };
 
   if (activeTab === "pekerjaan") {
-    return <Pekerjaan onBackToMain={() => setActiveTab("dashboard")} />;
+    return <Pekerjaan onBackToMain={() => changeTab("dashboard")} />;
   }
 
   return (
@@ -282,7 +339,7 @@ export default function App() {
       <Sidebar
         activeTab={activeTab}
         setActiveTab={(tab) => {
-          setActiveTab(tab);
+          changeTab(tab);
           setMobileMenuOpen(false);
         }}
         syncState={syncState}
@@ -347,7 +404,7 @@ export default function App() {
               </div>
               <div className="hidden lg:block text-left">
                 <span className="text-xs font-bold text-slate-700 block leading-tight">Yosua Reynaldi</span>
-                <span className="text-[10px] text-slate-400 font-medium block">Pekerja Lapangan</span>
+                <span className="text-[10px] text-slate-400 font-medium block">Pekerja</span>
               </div>
             </div>
           </div>
