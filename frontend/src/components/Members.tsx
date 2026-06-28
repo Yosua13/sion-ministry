@@ -50,6 +50,10 @@ export default function Members({
   const [formStatus, setFormStatus] = useState<Member["status"]>("active");
   const [formDate, setFormDate] = useState(new Date().toISOString().split("T")[0]);
 
+  // Validation and alert states
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
+
   const stages: Member["discipleshipStage"][] = ["Pra-Murid", "Murid Baru", "Murid Bertumbuh", "Pembuat Murid"];
 
   // Filter members
@@ -77,6 +81,7 @@ export default function Members({
     setFormMentor("");
     setFormStatus("active");
     setFormDate(new Date().toISOString().split("T")[0]);
+    setErrors({});
     setIsModalOpen(true);
   };
 
@@ -90,13 +95,25 @@ export default function Members({
     setFormMentor(member.mentorName);
     setFormStatus(member.status);
     setFormDate(member.joinedDate);
+    setErrors({});
     setIsModalOpen(true);
   };
 
   // Handle submit form
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formName || !formCityId) return;
+    
+    // Inline validation
+    const tempErrors: Record<string, string> = {};
+    if (!formName.trim()) tempErrors.name = "Nama lengkap wajib diisi";
+    if (!formCityId) tempErrors.cityId = "Pos kota pelayanan wajib dipilih";
+
+    if (Object.keys(tempErrors).length > 0) {
+      setErrors(tempErrors);
+      return;
+    }
+    
+    setErrors({});
 
     const cityObj = cities.find((c) => c.id === formCityId);
     const cityName = cityObj ? cityObj.name : "";
@@ -127,6 +144,12 @@ export default function Members({
     }
 
     setIsModalOpen(false);
+
+    // Show centered success alert
+    setShowSuccessAlert(true);
+    setTimeout(() => {
+      setShowSuccessAlert(false);
+    }, 2000);
   };
 
   const getStageStyles = (stage: Member["discipleshipStage"]) => {
@@ -327,12 +350,16 @@ export default function Members({
                   <label className="text-xs font-semibold text-slate-600">Nama Lengkap</label>
                   <input
                     type="text"
-                    required
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
                     placeholder="Contoh: Maria Alexandra"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                      errors.name ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.name && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.name}</span>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -342,12 +369,28 @@ export default function Members({
                     <select
                       value={formCityId}
                       onChange={(e) => setFormCityId(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-700"
+                      className={`w-full px-3 py-2 border rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-700 ${
+                        errors.cityId ? "border-red-400 focus:ring-red-500" : "border-slate-200"
+                      }`}
                     >
-                      {cities.map((city) => (
-                        <option key={city.id} value={city.id}>{city.name}</option>
-                      ))}
+                      {cities.length === 0 ? (
+                        <option value="">-- Tidak ada kota --</option>
+                      ) : (
+                        <>
+                          <option value="">-- Pilih Kota --</option>
+                          {cities.map((city) => (
+                            <option key={city.id} value={city.id}>{city.name}</option>
+                          ))}
+                        </>
+                      )}
                     </select>
+                    {cities.length === 0 ? (
+                      <span className="text-amber-500 text-[9px] mt-1 block leading-tight font-semibold">
+                        Pos kota kosong! Tambah kota di Dashboard dahulu.
+                      </span>
+                    ) : errors.cityId && (
+                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.cityId}</span>
+                    )}
                   </div>
 
                   {/* Phone */}
@@ -449,6 +492,17 @@ export default function Members({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {showSuccessAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col items-center max-w-xs w-full text-center material-shadow-3 animate-scale-up">
+            <div className="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
+              <Users className="h-6 w-6" />
+            </div>
+            <h3 className="font-display font-bold text-sm text-slate-900">Jemaat Berhasil Disimpan</h3>
+            <p className="text-xs text-slate-400 mt-1">Data jemaat telah diperbarui di database.</p>
           </div>
         </div>
       )}
