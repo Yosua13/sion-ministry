@@ -71,16 +71,38 @@ export default function Members({
     });
   }, [members, searchTerm, selectedCityId, selectedStage]);
 
+  const formatPhone = (val: string) => {
+    let digits = val.replace(/\D/g, "");
+    if (digits.length === 0) return "";
+    if (digits.startsWith("0")) {
+      digits = "62" + digits.substring(1);
+    } else if (!digits.startsWith("62")) {
+      digits = "62" + digits;
+    }
+    digits = digits.substring(0, 14);
+    let formatted = "+62";
+    if (digits.length > 2) {
+      formatted += " " + digits.substring(2, 5);
+    }
+    if (digits.length > 5) {
+      formatted += "-" + digits.substring(5, 9);
+    }
+    if (digits.length > 9) {
+      formatted += "-" + digits.substring(9, 14);
+    }
+    return formatted;
+  };
+
   // Handle open modal for adding
   const handleOpenAddModal = () => {
     setEditingMember(null);
     setFormName("");
-    setFormCityId(cities[0]?.id || "");
+    setFormCityId("");
     setFormPhone("");
-    setFormStage("Pra-Murid");
+    setFormStage("" as any);
     setFormMentor("");
     setFormStatus("active");
-    setFormDate(new Date().toISOString().split("T")[0]);
+    setFormDate("");
     setErrors({});
     setIsModalOpen(true);
   };
@@ -107,11 +129,23 @@ export default function Members({
     const tempErrors: Record<string, string> = {};
     if (!formName.trim()) tempErrors.name = "Nama lengkap wajib diisi";
     if (!formCityId) tempErrors.cityId = "Pos kota pelayanan wajib dipilih";
+    
+    const phoneDigits = formPhone.replace(/\D/g, "");
+    if (!formPhone) {
+      tempErrors.phone = "No. Telepon / WhatsApp wajib diisi";
+    } else if (phoneDigits.length < 12 || phoneDigits.length > 14) {
+      tempErrors.phone = "Nomor HP harus minimal input 12 angka dan maksimal input 14 angka";
+    }
+
+    if (!formStage) tempErrors.stage = "Tahap pemuridan wajib dipilih";
+    if (!formMentor.trim()) tempErrors.mentor = "Nama mentor pembimbing wajib diisi";
+    if (!formDate) tempErrors.date = "Tanggal mulai binaan wajib dipilih";
 
     if (Object.keys(tempErrors).length > 0) {
       setErrors(tempErrors);
       return;
     }
+
     
     setErrors({});
 
@@ -393,16 +427,21 @@ export default function Members({
                     )}
                   </div>
 
-                  {/* Phone */}
+                   {/* Phone */}
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-slate-600">No. Telepon / WhatsApp</label>
                     <input
                       type="tel"
                       value={formPhone}
-                      onChange={(e) => setFormPhone(e.target.value)}
-                      placeholder="Contoh: 081234567..."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                      onChange={(e) => setFormPhone(formatPhone(e.target.value))}
+                      placeholder="Contoh: +62 822-5139-6690"
+                      className={`w-full px-3 py-2 border rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                        errors.phone ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                      }`}
                     />
+                    {errors.phone && (
+                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.phone}</span>
+                    )}
                   </div>
                 </div>
 
@@ -413,12 +452,18 @@ export default function Members({
                     <select
                       value={formStage}
                       onChange={(e) => setFormStage(e.target.value as Member["discipleshipStage"])}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-700"
+                      className={`w-full px-3 py-2 border rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-700 ${
+                        errors.stage ? "border-red-400 focus:ring-red-500" : "border-slate-200"
+                      }`}
                     >
+                      <option value="">-- Pilih Tahap --</option>
                       {stages.map((stg) => (
                         <option key={stg} value={stg}>{stg}</option>
                       ))}
                     </select>
+                    {errors.stage && (
+                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.stage}</span>
+                    )}
                   </div>
 
                   {/* Mentor Name */}
@@ -429,8 +474,13 @@ export default function Members({
                       value={formMentor}
                       onChange={(e) => setFormMentor(e.target.value)}
                       placeholder="Contoh: Ev. Yosua"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                      className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                        errors.mentor ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                      }`}
                     />
+                    {errors.mentor && (
+                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.mentor}</span>
+                    )}
                   </div>
                 </div>
 
@@ -442,8 +492,13 @@ export default function Members({
                       type="date"
                       value={formDate}
                       onChange={(e) => setFormDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                      className={`w-full px-3 py-2 border rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                        errors.date ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                      }`}
                     />
+                    {errors.date && (
+                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.date}</span>
+                    )}
                   </div>
 
                   {/* Status */}
