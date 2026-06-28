@@ -38,7 +38,9 @@ export default function Links({
   const [formTitle, setFormTitle] = useState("");
   const [formUrl, setFormUrl] = useState("");
   const [formDescription, setFormDescription] = useState("");
-  const [formCategory, setFormCategory] = useState<DiscipleshipLink["category"]>("Bahan PA");
+  const [formCategory, setFormCategory] = useState<DiscipleshipLink["category"]>("" as any);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
 
   const categories = ["Bahan PA", "Buku Panduan", "Video Pengajaran", "Formulir"];
 
@@ -62,7 +64,8 @@ export default function Links({
     setFormTitle("");
     setFormUrl("");
     setFormDescription("");
-    setFormCategory("Bahan PA");
+    setFormCategory("" as any);
+    setErrors({});
     setIsModalOpen(true);
   };
 
@@ -73,13 +76,26 @@ export default function Links({
     setFormUrl(link.url);
     setFormDescription(link.description);
     setFormCategory(link.category);
+    setErrors({});
     setIsModalOpen(true);
   };
 
   // Handle submit form
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formTitle || !formUrl) return;
+    
+    const tempErrors: Record<string, string> = {};
+    if (!formTitle.trim()) tempErrors.title = "Judul tautan wajib diisi";
+    if (!formUrl.trim()) tempErrors.url = "Tautan URL wajib diisi";
+    if (!formCategory) tempErrors.category = "Kategori wajib dipilih";
+    if (!formDescription.trim()) tempErrors.description = "Deskripsi kegunaan wajib diisi";
+
+    if (Object.keys(tempErrors).length > 0) {
+      setErrors(tempErrors);
+      return;
+    }
+
+    setErrors({});
 
     if (editingLink) {
       onUpdateLink({
@@ -99,6 +115,12 @@ export default function Links({
     }
 
     setIsModalOpen(false);
+
+    // Trigger success alert
+    setShowSuccessAlert(true);
+    setTimeout(() => {
+      setShowSuccessAlert(false);
+    }, 2000);
   };
 
   const getCategoryIcon = (category: DiscipleshipLink["category"]) => {
@@ -275,12 +297,16 @@ export default function Links({
                   <label className="text-xs font-semibold text-slate-600">Judul Tautan / Berkas</label>
                   <input
                     type="text"
-                    required
                     value={formTitle}
                     onChange={(e) => setFormTitle(e.target.value)}
                     placeholder="Contoh: Modul Dasar Kristen Versi PDF"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                      errors.title ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.title && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.title}</span>
+                  )}
                 </div>
 
                 {/* URL */}
@@ -288,12 +314,16 @@ export default function Links({
                   <label className="text-xs font-semibold text-slate-600">Tautan URL Sumber Daya</label>
                   <input
                     type="url"
-                    required
                     value={formUrl}
                     onChange={(e) => setFormUrl(e.target.value)}
                     placeholder="Contoh: https://example.com/file.pdf"
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                      errors.url ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.url && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.url}</span>
+                  )}
                 </div>
 
                 {/* Category Select */}
@@ -302,12 +332,18 @@ export default function Links({
                   <select
                     value={formCategory}
                     onChange={(e) => setFormCategory(e.target.value as DiscipleshipLink["category"])}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-700"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-700 ${
+                      errors.category ? "border-red-400 focus:ring-red-500" : "border-slate-200"
+                    }`}
                   >
+                    <option value="">-- Pilih Kategori --</option>
                     {categories.map((cat) => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>
+                  {errors.category && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.category}</span>
+                  )}
                 </div>
 
                 {/* Description */}
@@ -318,8 +354,13 @@ export default function Links({
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
                     placeholder="Tulis ringkasan isi berkas atau panduan penggunaan cepat..."
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                    className={`w-full px-3 py-2 border rounded-xl text-xs font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                      errors.description ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.description && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.description}</span>
+                  )}
                 </div>
               </div>
 
@@ -340,6 +381,17 @@ export default function Links({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {showSuccessAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col items-center max-w-xs w-full text-center material-shadow-3 animate-scale-up">
+            <div className="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
+              <ExternalLink className="h-6 w-6 text-emerald-600" />
+            </div>
+            <h3 className="font-display font-bold text-sm text-slate-900">Tautan Berhasil Disimpan</h3>
+            <p className="text-xs text-slate-400 mt-1">Link sumber daya murid telah diperbarui di database.</p>
           </div>
         </div>
       )}
