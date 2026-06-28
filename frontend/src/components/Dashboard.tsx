@@ -41,7 +41,7 @@ export default function Dashboard({
   const [isAddCityOpen, setIsAddCityOpen] = useState(false);
   const [newCityName, setNewCityName] = useState("");
   const [newCityRegion, setNewCityRegion] = useState("");
-  const [newCityReachedDate, setNewCityReachedDate] = useState(new Date().toISOString().split("T")[0]);
+  const [newCityReachedDate, setNewCityReachedDate] = useState("");
   const [newCityWorkersCount, setNewCityWorkersCount] = useState(1);
   const [cityFormErrors, setCityFormErrors] = useState<Record<string, string>>({});
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
@@ -50,6 +50,7 @@ export default function Dashboard({
     const errors: Record<string, string> = {};
     if (!newCityName.trim()) errors.name = "Nama kota wajib diisi";
     if (!newCityRegion.trim()) errors.region = "Wilayah/Provinsi wajib diisi";
+    if (!newCityReachedDate) errors.reachedDate = "Tanggal mulai dijangkau wajib dipilih";
 
     if (Object.keys(errors).length > 0) {
       setCityFormErrors(errors);
@@ -69,7 +70,7 @@ export default function Dashboard({
     // Clear inputs
     setNewCityName("");
     setNewCityRegion("");
-    setNewCityReachedDate(new Date().toISOString().split("T")[0]);
+    setNewCityReachedDate("");
     setNewCityWorkersCount(1);
 
     // Show success banner
@@ -449,8 +450,13 @@ export default function Dashboard({
                   type="date" 
                   value={newCityReachedDate}
                   onChange={(e) => setNewCityReachedDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                  className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
+                    cityFormErrors.reachedDate ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
+                  }`}
                 />
+                {cityFormErrors.reachedDate && (
+                  <span className="text-red-500 text-[10px] mt-1 block font-semibold">{cityFormErrors.reachedDate}</span>
+                )}
               </div>
 
               <div>
