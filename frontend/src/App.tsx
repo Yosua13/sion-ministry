@@ -50,6 +50,10 @@ export default function App() {
 
   useEffect(() => {
     refreshData();
+    // Fetch fresh data from backend if online on startup
+    SionDatabase.fetchFromCloud().then(() => {
+      refreshData();
+    });
   }, []);
 
   // Listen to browser network changes to automatically sync or flag status
