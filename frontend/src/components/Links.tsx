@@ -13,6 +13,7 @@ import {
   FileText
 } from "lucide-react";
 import { DiscipleshipLink } from "../types";
+import ConfirmDialog from "./ConfirmDialog";
 
 interface LinksProps {
   links: DiscipleshipLink[];
@@ -33,6 +34,7 @@ export default function Links({
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLink, setEditingLink] = useState<DiscipleshipLink | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DiscipleshipLink | null>(null);
 
   // Form states
   const [formTitle, setFormTitle] = useState("");
@@ -121,6 +123,12 @@ export default function Links({
     setTimeout(() => {
       setShowSuccessAlert(false);
     }, 2000);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return;
+    onDeleteLink(deleteTarget.id);
+    setDeleteTarget(null);
   };
 
   const getCategoryIcon = (category: DiscipleshipLink["category"]) => {
@@ -255,11 +263,7 @@ export default function Links({
                     <Edit className="h-3.5 w-3.5" />
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm(`Apakah Anda yakin ingin menghapus tautan "${link.title}"?`)) {
-                        onDeleteLink(link.id);
-                      }
-                    }}
+                    onClick={() => setDeleteTarget(link)}
                     className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-500 rounded-lg transition-all"
                     title="Hapus"
                   >
@@ -384,6 +388,15 @@ export default function Links({
           </div>
         </div>
       )}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Hapus Tautan?"
+        description="Tautan sumber daya ini akan dihapus dari daftar lokal dan tidak lagi muncul pada pencarian."
+        subject={deleteTarget?.title}
+        confirmLabel="Hapus Tautan"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+      />
       {showSuccessAlert && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col items-center max-w-xs w-full text-center material-shadow-3 animate-scale-up">

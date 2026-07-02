@@ -284,6 +284,7 @@ export default function App() {
           <JurnalPAComponent
             jurnalList={jurnalPa}
             cities={cities}
+            members={members}
             onAddJurnal={handleAddJurnalPA}
             onDeleteJurnal={handleDeleteJurnalPA}
             isOnline={syncState.isOnline}

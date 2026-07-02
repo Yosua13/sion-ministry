@@ -18,6 +18,15 @@ import {
   Image as ImageIcon
 } from "lucide-react";
 import { BeritaAcara, City } from "../types";
+import ConfirmDialog from "./ConfirmDialog";
+
+const MAX_IMAGE_FILE_SIZE = 2 * 1024 * 1024;
+const MAX_TOTAL_IMAGE_SIZE = 6 * 1024 * 1024;
+
+const formatFileSize = (bytes: number) => {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.ceil(bytes / 1024)} KB`;
+};
 
 interface BeritaAcaraProps {
   beritaList: BeritaAcara[];
@@ -71,16 +80,45 @@ export default function BeritaAcaraComponent({
   
   // Multiple images state for the upload form
   const [formImages, setFormImages] = useState<string[]>([]);
+  const [formImageBytes, setFormImageBytes] = useState<number[]>([]);
   const [isAiDrafting, setIsAiDrafting] = useState(false);
 
   // Validation and alert states
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [selectedBerita, setSelectedBerita] = useState<BeritaAcara | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BeritaAcara | null>(null);
+  const [aiNotice, setAiNotice] = useState<{
+    title: string;
+    message: string;
+    tone: "info" | "success";
+  } | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
-    const filesArray = Array.from(e.target.files);
+    const filesArray = Array.from(e.target.files) as File[];
+    const oversizedFiles = filesArray.filter((file) => file.size > MAX_IMAGE_FILE_SIZE);
+    const currentTotal = formImageBytes.reduce((sum, size) => sum + size, 0);
+    const incomingTotal = filesArray.reduce((sum, file) => sum + file.size, 0);
+
+    if (oversizedFiles.length > 0) {
+      setErrors(prev => ({
+        ...prev,
+        images: `Ukuran foto terlalu besar. Maksimal ${formatFileSize(MAX_IMAGE_FILE_SIZE)} per foto. File bermasalah: ${oversizedFiles.map((file) => `${file.name} (${formatFileSize(file.size)})`).join(", ")}.`
+      }));
+      e.target.value = "";
+      return;
+    }
+
+    if (currentTotal + incomingTotal > MAX_TOTAL_IMAGE_SIZE) {
+      setErrors(prev => ({
+        ...prev,
+        images: `Total ukuran foto terlalu besar. Maksimal ${formatFileSize(MAX_TOTAL_IMAGE_SIZE)} per laporan agar penyimpanan tetap stabil.`
+      }));
+      e.target.value = "";
+      return;
+    }
     
     const promises = filesArray.map((file: File) => {
       return new Promise<string>((resolve) => {
@@ -94,11 +132,19 @@ export default function BeritaAcaraComponent({
 
     Promise.all(promises).then(base64Images => {
       setFormImages(prev => [...prev, ...base64Images]);
+      setFormImageBytes(prev => [...prev, ...filesArray.map((file) => file.size)]);
+      setErrors(prev => {
+        const next = { ...prev };
+        delete next.images;
+        return next;
+      });
+      e.target.value = "";
     });
   };
 
   const handleRemoveImage = (indexToRemove: number) => {
     setFormImages(prev => prev.filter((_, idx) => idx !== indexToRemove));
+    setFormImageBytes(prev => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
   const toggleLike = (id: string) => {
@@ -152,6 +198,7 @@ export default function BeritaAcaraComponent({
     setFormAttendees("" as any);
     setFormDescription("");
     setFormImages([]); // No preset images! Start empty.
+    setFormImageBytes([]);
     setErrors({});
     setIsModalOpen(true);
   };
@@ -159,15 +206,22 @@ export default function BeritaAcaraComponent({
   // Add a picture to the active upload collection
   const handleAddPresetImage = (url: string) => {
     if (formImages.includes(url)) {
-      setFormImages(formImages.filter(img => img !== url));
+      const nextImages = formImages.filter(img => img !== url);
+      setFormImageBytes(formImageBytes.filter((_, index) => formImages[index] !== url));
+      setFormImages(nextImages);
     } else {
       setFormImages([...formImages, url]);
+      setFormImageBytes([...formImageBytes, 0]);
     }
   };
 
   const handleAiDraft = async () => {
     if (!formDescription && !formTitle) {
-      alert("Silakan tulis judul atau draf poin-poin catatan draf terlebih dahulu agar AI Sion bisa merapikannya!");
+      setAiNotice({
+        title: "Butuh Bahan Draf",
+        message: "Isi judul kegiatan atau tulis beberapa poin catatan terlebih dahulu. AI Sion akan lebih mudah merapikan narasi jika ada bahan dasar pelayanan yang bisa diolah.",
+        tone: "info"
+      });
       return;
     }
 
@@ -191,8 +245,13 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
         setFormDescription(data.text);
       }
     } catch {
-      alert("AI Sion sedang sibuk. Menulis draf simulasi rohani...");
-      setFormDescription(`Kegiatan ${formType} dengan tema "${formTitle || 'Tuhan Yesus Penyelamat'}" terlaksana dengan penuh hadirat Tuhan. Pokok doa keliling dipanjatkan untuk multiplikasi jiwa-jiwa baru serta penjangkauan masyarakat pedalaman. Semua pekerja melayani dengan hati hamba.`);
+      const selectedCity = cities.find((city) => city.id === formCityId)?.name || "pos pelayanan";
+      setFormDescription(`Kegiatan ${formType || "pelayanan"} bertema "${formTitle || "Tuhan Yesus Penyelamat"}" di ${selectedCity} berlangsung dengan tertib, hangat, dan penuh sukacita. Firman serta sharing yang dibawakan meneguhkan jemaat untuk terus bertumbuh dalam iman dan saling melayani. Pokok doa diarahkan bagi multiplikasi murid, kesatuan pekerja, dan terbukanya hati masyarakat untuk menerima kasih Kristus.`);
+      setAiNotice({
+        title: "Draf Lokal Sudah Disiapkan",
+        message: "Koneksi AI belum memberi respons, jadi Sion Academy menyiapkan draf lokal yang tetap bisa Anda edit. Silakan poles bagian yang perlu dibuat lebih spesifik sebelum disimpan.",
+        tone: "success"
+      });
     } finally {
       setIsAiDrafting(false);
     }
@@ -208,9 +267,11 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
     if (!formDate) tempErrors.date = "Tanggal kegiatan wajib diisi";
     if (!formCityId) tempErrors.cityId = "Pos kota pelayanan wajib dipilih";
     if (!formAttendees || Number(formAttendees) <= 0) tempErrors.attendees = "Jumlah jemaat hadir wajib diisi (minimal 1)";
-    if (!formWorker.trim()) tempErrors.workerName = "Nama pelayan/pekerja wajib diisi";
+    if (!formWorker.trim()) tempErrors.workerName = "Nama pembawa sharing wajib diisi";
     if (!formDescription.trim()) tempErrors.description = "Deskripsi kegiatan pelayanan wajib diisi";
     if (formImages.length === 0) tempErrors.images = "Dokumentasi foto wajib diunggah (minimal 1 foto)";
+    if (formImageBytes.some((size) => size > MAX_IMAGE_FILE_SIZE)) tempErrors.images = `Ada foto yang melebihi ${formatFileSize(MAX_IMAGE_FILE_SIZE)}. Hapus foto tersebut lalu unggah versi yang lebih kecil.`;
+    if (formImageBytes.reduce((sum, size) => sum + size, 0) > MAX_TOTAL_IMAGE_SIZE) tempErrors.images = `Total foto melebihi ${formatFileSize(MAX_TOTAL_IMAGE_SIZE)}. Kurangi jumlah foto atau kompres gambar terlebih dahulu.`;
 
     if (Object.keys(tempErrors).length > 0) {
       setErrors(tempErrors);
@@ -222,17 +283,24 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
     const cityObj = cities.find(c => c.id === formCityId);
     const cityName = cityObj ? cityObj.name : "";
 
-    onAddBerita({
-      title: formTitle,
-      date: formDate,
-      cityId: formCityId,
-      cityName,
-      workerName: formWorker,
-      activityType: formType,
-      attendeesCount: Number(formAttendees),
-      description: formDescription,
-      images: formImages
-    });
+    try {
+      onAddBerita({
+        title: formTitle,
+        date: formDate,
+        cityId: formCityId,
+        cityName,
+        workerName: formWorker,
+        activityType: formType,
+        attendeesCount: Number(formAttendees),
+        description: formDescription,
+        images: formImages
+      });
+    } catch {
+      setErrors({
+        images: "Foto terlalu besar untuk disimpan di perangkat ini. Kompres gambar atau unggah lebih sedikit foto, lalu coba simpan lagi."
+      });
+      return;
+    }
 
     setIsModalOpen(false);
     
@@ -241,6 +309,15 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
     setTimeout(() => {
       setShowSuccessAlert(false);
     }, 2000);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return;
+    onDeleteBerita(deleteTarget.id);
+    if (selectedBerita?.id === deleteTarget.id) {
+      setSelectedBerita(null);
+    }
+    setDeleteTarget(null);
   };
 
   return (
@@ -315,7 +392,16 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
             const likeInfo = likes[berita.id] || { count: 0, active: false };
             
             return (
-              <div key={berita.id} className="bg-white rounded-3xl border border-slate-100 material-shadow-2 hover:border-indigo-100 transition-all flex flex-col overflow-hidden">
+              <div
+                key={berita.id}
+                onClick={() => setSelectedBerita(berita)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") setSelectedBerita(berita);
+                }}
+                role="button"
+                tabIndex={0}
+                className="bg-white rounded-3xl border border-slate-100 material-shadow-2 hover:border-indigo-100 transition-all flex flex-col overflow-hidden cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
                 
                 {/* Card Header (Profile Style) */}
                 <div className="p-4 flex items-center justify-between border-b border-slate-50">
@@ -361,13 +447,19 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
                   {berita.images.length > 1 && (
                     <>
                       <button
-                        onClick={() => handlePrevSlide(berita.id, berita.images.length)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePrevSlide(berita.id, berita.images.length);
+                        }}
                         className="absolute left-2 top-1/2 -translate-y-1/2 p-1.5 bg-white/70 hover:bg-white text-slate-800 rounded-full shadow-md transition-all z-10 cursor-pointer"
                       >
                         <ChevronLeft className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => handleNextSlide(berita.id, berita.images.length)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleNextSlide(berita.id, berita.images.length);
+                        }}
                         className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-white/70 hover:bg-white text-slate-800 rounded-full shadow-md transition-all z-10 cursor-pointer"
                       >
                         <ChevronRight className="h-4 w-4" />
@@ -394,7 +486,10 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
                 <div className="px-4 py-3 border-b border-slate-50 flex items-center justify-between">
                   <div className="flex items-center space-x-4">
                     <button 
-                      onClick={() => toggleLike(berita.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleLike(berita.id);
+                      }}
                       className="flex items-center space-x-1 text-slate-600 hover:text-rose-600 transition-colors cursor-pointer"
                     >
                       <Heart className={`h-4.5 w-4.5 transition-transform ${likeInfo.active ? "text-rose-600 fill-rose-600 scale-110" : ""}`} />
@@ -403,7 +498,7 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
 
                     <div className="flex items-center space-x-1 text-slate-400">
                       <User className="h-3.5 w-3.5" />
-                      <span className="text-[10px] font-medium text-slate-500">{berita.workerName}</span>
+                      <span className="text-[10px] font-medium text-slate-500">Pembawa: {berita.workerName}</span>
                     </div>
                   </div>
 
@@ -422,8 +517,9 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
                   <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mt-2 pt-2 border-t border-slate-50">
                     <span>ID: {berita.id}</span>
                     <button 
-                      onClick={() => {
-                        if (confirm("Hapus berita acara pelayanan ini?")) onDeleteBerita(berita.id);
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteTarget(berita);
                       }}
                       className="text-rose-500 hover:text-rose-700 font-bold transition-all flex items-center gap-1 cursor-pointer"
                     >
@@ -438,6 +534,125 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
           })}
         </div>
       )}
+
+      {selectedBerita && (() => {
+        const detailSlide = activeSlides[selectedBerita.id] || 0;
+        const detailLike = likes[selectedBerita.id] || { count: 0, active: false };
+        const detailImage = selectedBerita.images[detailSlide] || selectedBerita.images[0];
+
+        return (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5" onClick={() => setSelectedBerita(null)}>
+            <div className="relative bg-white rounded-3xl w-full max-w-6xl max-h-[90vh] overflow-hidden material-shadow-3 grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_420px] animate-in fade-in zoom-in duration-200" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => setSelectedBerita(null)}
+                className="absolute top-3 right-3 z-20 h-9 w-9 rounded-full bg-slate-950/70 text-white hover:bg-slate-950 flex items-center justify-center transition-all"
+                aria-label="Tutup detail berita acara"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              <div className="relative min-h-[320px] lg:min-h-[82vh] bg-slate-950 flex items-center justify-center">
+                <img
+                  src={detailImage}
+                  alt={selectedBerita.title}
+                  className="h-full w-full object-contain"
+                  referrerPolicy="no-referrer"
+                />
+
+                {selectedBerita.images.length > 1 && (
+                  <>
+                    <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold font-mono px-2.5 py-1 rounded-full">
+                      {detailSlide + 1}/{selectedBerita.images.length}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handlePrevSlide(selectedBerita.id, selectedBerita.images.length)}
+                      className="absolute left-4 top-1/2 -translate-y-1/2 h-10 w-10 bg-white/80 hover:bg-white text-slate-900 rounded-full shadow-md transition-all flex items-center justify-center"
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleNextSlide(selectedBerita.id, selectedBerita.images.length)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 h-10 w-10 bg-white/80 hover:bg-white text-slate-900 rounded-full shadow-md transition-all flex items-center justify-center"
+                    >
+                      <ChevronRight className="h-5 w-5" />
+                    </button>
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex space-x-1.5">
+                      {selectedBerita.images.map((_, idx) => (
+                        <span
+                          key={idx}
+                          className={`h-2 w-2 rounded-full transition-all ${idx === detailSlide ? "bg-white scale-125" : "bg-white/40"}`}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="flex min-h-0 flex-col bg-white">
+                <div className="p-5 border-b border-slate-100 flex items-start gap-3 pr-14">
+                  <div className="h-11 w-11 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xs shrink-0">
+                    {selectedBerita.cityName.substring(0, 2).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-display font-bold text-base text-slate-950 leading-snug">{selectedBerita.title}</h3>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-slate-400 font-semibold">
+                      <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />Sion {selectedBerita.cityName}</span>
+                      <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" />{selectedBerita.date}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-5 space-y-5 overflow-y-auto">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="bg-indigo-50 text-indigo-600 text-[10px] font-extrabold uppercase px-3 py-1 rounded-full">
+                      {selectedBerita.activityType}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">ID: {selectedBerita.id}</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                      <span className="text-[9px] uppercase font-bold text-slate-400 block">Pembawa Sharing</span>
+                      <span className="text-xs font-bold text-slate-800">{selectedBerita.workerName}</span>
+                    </div>
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                      <span className="text-[9px] uppercase font-bold text-slate-400 block">Jumlah Hadir</span>
+                      <span className="text-xs font-bold text-slate-800">{selectedBerita.attendeesCount} jiwa</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Deskripsi Laporan</span>
+                    <p className="mt-2 text-sm text-slate-600 leading-relaxed">{selectedBerita.description}</p>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => toggleLike(selectedBerita.id)}
+                      className="flex items-center gap-2 text-xs font-bold text-slate-600 hover:text-rose-600 transition-colors"
+                    >
+                      <Heart className={`h-5 w-5 transition-transform ${detailLike.active ? "text-rose-600 fill-rose-600 scale-110" : ""}`} />
+                      <span>{detailLike.count} Dukungan Doa</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget(selectedBerita)}
+                      className="flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-100 transition-all"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>Hapus</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Create New Berita Acara Modal */}
       {isModalOpen && (
@@ -504,6 +719,7 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tanggal</label>
                   <input
                     type="date"
+                    placeholder="Pilih tanggal kegiatan"
                     value={formDate}
                     onChange={(e) => setFormDate(e.target.value)}
                     className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
@@ -551,6 +767,7 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
                   <input
                     type="number"
                     min="1"
+                    placeholder="Contoh: 35"
                     value={formAttendees}
                     onChange={(e) => setFormAttendees(e.target.value === "" ? ("" as any) : Number(e.target.value))}
                     className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
@@ -563,9 +780,10 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
                 </div>
 
                 <div className="col-span-1">
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nama Pelayan/Pekerja</label>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Pembawa Sharing</label>
                   <input
                     type="text"
+                    placeholder="Contoh: Ev. Yosua, Pdt. Markus"
                     value={formWorker}
                     onChange={(e) => setFormWorker(e.target.value)}
                     className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
@@ -584,6 +802,9 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
                 
                 {/* Device Uploader */}
                 <div className="space-y-1">
+                  <span className="text-[9px] text-slate-400 font-semibold block">
+                    Maksimal {formatFileSize(MAX_IMAGE_FILE_SIZE)} per foto dan {formatFileSize(MAX_TOTAL_IMAGE_SIZE)} total per laporan.
+                  </span>
                   <input 
                     type="file" 
                     multiple 
@@ -673,6 +894,39 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
               </div>
 
             </form>
+          </div>
+        </div>
+      )}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Hapus Berita Acara?"
+        description="Laporan, dokumentasi foto, dan antrean sinkronisasi terkait data ini akan dihapus dari tampilan lokal."
+        subject={deleteTarget?.title}
+        confirmLabel="Hapus Laporan"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+      />
+      {aiNotice && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white border border-slate-100 material-shadow-3 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 text-center">
+              <div className={`mx-auto h-12 w-12 rounded-2xl flex items-center justify-center border mb-4 ${
+                aiNotice.tone === "success"
+                  ? "bg-emerald-50 text-emerald-600 border-emerald-100"
+                  : "bg-indigo-50 text-indigo-600 border-indigo-100"
+              }`}>
+                <Sparkles className="h-6 w-6" />
+              </div>
+              <h3 className="font-display font-bold text-base text-slate-950">{aiNotice.title}</h3>
+              <p className="mt-2 text-xs text-slate-500 leading-relaxed">{aiNotice.message}</p>
+              <button
+                type="button"
+                onClick={() => setAiNotice(null)}
+                className="mt-5 w-full rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-800 transition-all"
+              >
+                Mengerti
+              </button>
+            </div>
           </div>
         </div>
       )}

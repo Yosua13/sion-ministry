@@ -17,6 +17,7 @@ import {
   Trash
 } from "lucide-react";
 import { Member, City } from "../types";
+import ConfirmDialog from "./ConfirmDialog";
 
 interface MembersProps {
   members: Member[];
@@ -40,12 +41,13 @@ export default function Members({
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Member | null>(null);
 
   // Form states
   const [formName, setFormName] = useState("");
   const [formCityId, setFormCityId] = useState("");
   const [formPhone, setFormPhone] = useState("");
-  const [formStage, setFormStage] = useState<Member["discipleshipStage"]>("Pra-Murid");
+  const [formStage, setFormStage] = useState<Member["discipleshipStage"]>("Jemaat");
   const [formMentor, setFormMentor] = useState("");
   const [formStatus, setFormStatus] = useState<Member["status"]>("active");
   const [formDate, setFormDate] = useState(new Date().toISOString().split("T")[0]);
@@ -54,7 +56,7 @@ export default function Members({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
 
-  const stages: Member["discipleshipStage"][] = ["Pra-Murid", "Murid Baru", "Murid Bertumbuh", "Pembuat Murid"];
+  const stages: Member["discipleshipStage"][] = ["Pekerja", "Jemaat"];
 
   // Filter members
   const filteredMembers = useMemo(() => {
@@ -70,6 +72,17 @@ export default function Members({
       return matchesSearch && matchesCity && matchesStage;
     });
   }, [members, searchTerm, selectedCityId, selectedStage]);
+
+  const mentorNameSuggestions = useMemo(() => {
+    const names = [
+      ...members.map((member) => member.name),
+      ...members.map((member) => member.mentorName)
+    ]
+      .map((name) => name.trim())
+      .filter(Boolean);
+
+    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b, "id-ID"));
+  }, [members]);
 
   const formatPhone = (val: string) => {
     let digits = val.replace(/\D/g, "");
@@ -186,15 +199,17 @@ export default function Members({
     }, 2000);
   };
 
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return;
+    onDeleteMember(deleteTarget.id);
+    setDeleteTarget(null);
+  };
+
   const getStageStyles = (stage: Member["discipleshipStage"]) => {
     switch (stage) {
-      case "Pra-Murid":
-        return "bg-slate-100 text-slate-700 border-slate-200";
-      case "Murid Baru":
-        return "bg-blue-50 text-blue-700 border-blue-200";
-      case "Murid Bertumbuh":
+      case "Pekerja":
         return "bg-indigo-50 text-indigo-700 border-indigo-200";
-      case "Pembuat Murid":
+      case "Jemaat":
         return "bg-emerald-50 text-emerald-700 border-emerald-200";
       default:
         return "bg-slate-100 text-slate-700 border-slate-200";
@@ -343,11 +358,7 @@ export default function Members({
                   <Edit className="h-4 w-4" />
                 </button>
                 <button
-                  onClick={() => {
-                    if (confirm(`Apakah Anda yakin ingin menghapus data jemaat ${member.name}?`)) {
-                      onDeleteMember(member.id);
-                    }
-                  }}
+                  onClick={() => setDeleteTarget(member)}
                   className="p-2 hover:bg-rose-50 text-rose-500 hover:text-rose-400 rounded-xl transition-all"
                   title="Hapus Data"
                 >
@@ -378,6 +389,11 @@ export default function Members({
 
             {/* Dialog Form */}
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              <datalist id="member-mentor-suggestions">
+                {mentorNameSuggestions.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
               <div className="grid grid-cols-1 gap-4">
                 {/* Name */}
                 <div className="space-y-1">
@@ -471,6 +487,7 @@ export default function Members({
                     <label className="text-xs font-semibold text-slate-600">Nama Mentor Pembimbing</label>
                     <input
                       type="text"
+                      list="member-mentor-suggestions"
                       value={formMentor}
                       onChange={(e) => setFormMentor(e.target.value)}
                       placeholder="Contoh: Ev. Yosua"
@@ -490,6 +507,7 @@ export default function Members({
                     <label className="text-xs font-semibold text-slate-600">Tanggal Mulai Binaan</label>
                     <input
                       type="date"
+                      placeholder="Pilih tanggal mulai binaan"
                       value={formDate}
                       onChange={(e) => setFormDate(e.target.value)}
                       className={`w-full px-3 py-2 border rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
@@ -550,6 +568,15 @@ export default function Members({
           </div>
         </div>
       )}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Hapus Data Jemaat?"
+        description="Data profil, status pembinaan, dan relasi mentor untuk jemaat ini akan dihapus dari tampilan lokal."
+        subject={deleteTarget?.name}
+        confirmLabel="Hapus Jemaat"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+      />
       {showSuccessAlert && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col items-center max-w-xs w-full text-center material-shadow-3 animate-scale-up">

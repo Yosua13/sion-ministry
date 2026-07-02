@@ -14,11 +14,13 @@ import {
   Hash,
   Compass
 } from "lucide-react";
-import { JurnalPA, City } from "../types";
+import { JurnalPA, City, Member } from "../types";
+import ConfirmDialog from "./ConfirmDialog";
 
 interface JurnalPAProps {
   jurnalList: JurnalPA[];
   cities: City[];
+  members: Member[];
   onAddJurnal: (jurnal: Omit<JurnalPA, "id" | "synced" | "action">) => void;
   onDeleteJurnal: (id: string) => void;
   isOnline: boolean;
@@ -36,6 +38,7 @@ const PA_PRESET_IMAGES = [
 export default function JurnalPAComponent({
   jurnalList,
   cities,
+  members,
   onAddJurnal,
   onDeleteJurnal,
   isOnline
@@ -60,6 +63,8 @@ export default function JurnalPAComponent({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [selectedJurnal, setSelectedJurnal] = useState<JurnalPA | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<JurnalPA | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -87,6 +92,19 @@ export default function JurnalPAComponent({
       return matchesSearch && matchesCity;
     });
   }, [jurnalList, searchTerm, selectedCityId]);
+
+  const nameSuggestions = useMemo(() => {
+    const names = [
+      ...members.map((m) => m.name),
+      ...members.map((m) => m.mentorName),
+      ...jurnalList.map((j) => j.menteeName),
+      ...jurnalList.map((j) => j.mentorName)
+    ]
+      .map((name) => name.trim())
+      .filter(Boolean);
+
+    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b, "id-ID"));
+  }, [members, jurnalList]);
 
   const handleOpenAddModal = () => {
     setFormTheme("");
@@ -177,6 +195,15 @@ export default function JurnalPAComponent({
     }, 2000);
   };
 
+  const handleConfirmDelete = () => {
+    if (!deleteTarget) return;
+    onDeleteJurnal(deleteTarget.id);
+    if (selectedJurnal?.id === deleteTarget.id) {
+      setSelectedJurnal(null);
+    }
+    setDeleteTarget(null);
+  };
+
   return (
     <div className="space-y-6">
       
@@ -231,7 +258,16 @@ export default function JurnalPAComponent({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredJurnal.map((jurnal) => (
-            <div key={jurnal.id} className="bg-white rounded-3xl border border-slate-100 material-shadow-2 overflow-hidden flex flex-col justify-between hover:border-indigo-100 transition-all">
+            <div
+              key={jurnal.id}
+              onClick={() => setSelectedJurnal(jurnal)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") setSelectedJurnal(jurnal);
+              }}
+              role="button"
+              tabIndex={0}
+              className="bg-white rounded-3xl border border-slate-100 material-shadow-2 overflow-hidden flex flex-col justify-between hover:border-indigo-100 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
               
               {/* Card Thumbnail Top */}
               <div className="relative aspect-video w-full bg-slate-100">
@@ -286,8 +322,9 @@ export default function JurnalPAComponent({
                   </span>
                   
                   <button
-                    onClick={() => {
-                      if (confirm("Hapus jurnal bimbingan PA ini?")) onDeleteJurnal(jurnal.id);
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteTarget(jurnal);
                     }}
                     className="text-rose-500 hover:text-rose-700 font-bold transition-all flex items-center gap-1 cursor-pointer"
                   >
@@ -299,6 +336,84 @@ export default function JurnalPAComponent({
 
             </div>
           ))}
+        </div>
+      )}
+
+      {selectedJurnal && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5" onClick={() => setSelectedJurnal(null)}>
+          <div className="relative bg-white rounded-3xl w-full max-w-6xl max-h-[90vh] overflow-hidden material-shadow-3 grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_420px] animate-in fade-in zoom-in duration-200" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setSelectedJurnal(null)}
+              className="absolute top-3 right-3 z-20 h-9 w-9 rounded-full bg-slate-950/70 text-white hover:bg-slate-950 flex items-center justify-center transition-all"
+              aria-label="Tutup detail jurnal"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="relative min-h-[320px] lg:min-h-[82vh] bg-slate-950 flex items-center justify-center">
+              <img
+                src={selectedJurnal.image}
+                alt={selectedJurnal.theme}
+                className="h-full w-full object-contain"
+                referrerPolicy="no-referrer"
+              />
+              <div className="absolute left-4 top-4 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-3 py-1 rounded-full flex items-center gap-1.5">
+                <BookOpen className="h-3.5 w-3.5 text-indigo-400" />
+                <span>{selectedJurnal.scripture}</span>
+              </div>
+            </div>
+
+            <div className="flex min-h-0 flex-col bg-white">
+              <div className="p-5 border-b border-slate-100 flex items-start gap-3 pr-14">
+                <div className="h-11 w-11 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                  <BookMarked className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-display font-bold text-base text-slate-950 leading-snug">{selectedJurnal.theme}</h3>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-slate-400 font-semibold">
+                    <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />Sion {selectedJurnal.cityName}</span>
+                    <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" />{selectedJurnal.date}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-5 space-y-5 overflow-y-auto">
+                <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-3">
+                  <span className="text-[9px] uppercase tracking-wider font-bold text-indigo-600 block">Fokus PA</span>
+                  <p className="mt-1 text-xs font-bold text-slate-800 leading-relaxed">{selectedJurnal.focus}</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block">Mentee / Murid</span>
+                    <span className="text-xs font-bold text-slate-800">{selectedJurnal.menteeName}</span>
+                  </div>
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block">Mentor / Pekerja</span>
+                    <span className="text-xs font-bold text-slate-800">{selectedJurnal.mentorName}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Catatan Evaluasi</span>
+                  <p className="mt-2 text-sm text-slate-600 leading-relaxed">{selectedJurnal.notes}</p>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+                  <span className="text-[10px] font-mono text-slate-400">ID: {selectedJurnal.id}</span>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTarget(selectedJurnal)}
+                    className="flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-100 transition-all"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span>Hapus Jurnal</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -321,12 +436,18 @@ export default function JurnalPAComponent({
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4 flex-1">
+              <datalist id="jurnal-name-suggestions">
+                {nameSuggestions.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
               
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nama Mentee/Murid</label>
                   <input
                     type="text"
+                    list="jurnal-name-suggestions"
                     placeholder="Misal: Roy, Handoko..."
                     value={formMenteeName}
                     onChange={(e) => setFormMenteeName(e.target.value)}
@@ -343,6 +464,8 @@ export default function JurnalPAComponent({
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Mentor/Pekerja</label>
                   <input
                     type="text"
+                    list="jurnal-name-suggestions"
+                    placeholder="Misal: Ev. Yosua, Pdt. Markus..."
                     value={formMentorName}
                     onChange={(e) => setFormMentorName(e.target.value)}
                     className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
@@ -439,6 +562,7 @@ export default function JurnalPAComponent({
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tanggal</label>
                   <input
                     type="date"
+                    placeholder="Pilih tanggal bimbingan"
                     value={formDate}
                     onChange={(e) => setFormDate(e.target.value)}
                     className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
@@ -542,6 +666,15 @@ export default function JurnalPAComponent({
           </div>
         </div>
       )}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Hapus Jurnal PA?"
+        description="Catatan bimbingan, foto dokumentasi, dan data sinkronisasi terkait jurnal ini akan dihapus dari tampilan lokal."
+        subject={deleteTarget?.theme}
+        confirmLabel="Hapus Jurnal"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+      />
       {showSuccessAlert && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col items-center max-w-xs w-full text-center material-shadow-3 animate-scale-up">
