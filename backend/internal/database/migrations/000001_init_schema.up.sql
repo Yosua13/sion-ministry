@@ -76,6 +76,9 @@ CREATE TABLE IF NOT EXISTS donation_campaigns (
     collected_amount DOUBLE PRECISION DEFAULT 0.0,
     description TEXT,
     banner_url TEXT,
+    bank_name TEXT,
+    account_number TEXT,
+    account_name TEXT,
     donors_count INT DEFAULT 0,
     days_remaining INT DEFAULT 0
 );

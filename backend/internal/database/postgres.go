@@ -19,7 +19,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		"host=%s port=%s user=%s password=%s dbname=postgres sslmode=disable",
 		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword,
 	)
-	
+
 	dbAdmin, err := sql.Open("postgres", adminDSN)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open admin db connection: %w", err)
@@ -58,7 +58,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 
 	db, err := gorm.Open(gormpostgres.Open(dsn), gormConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database %s: %w", err)
+		return nil, fmt.Errorf("failed to connect to database %s: %w", cfg.DBName, err)
 	}
 
 	log.Printf("Connected to PostgreSQL database: %s", cfg.DBName)

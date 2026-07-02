@@ -28,15 +28,15 @@ type DiscipleshipModule struct {
 }
 
 type Member struct {
-	ID                 string `gorm:"primaryKey" json:"id"`
-	Name               string `json:"name"`
-	CityID             string `json:"cityId"`
-	CityName           string `json:"cityName"`
-	Phone              string `json:"phone"`
-	DiscipleshipStage  string `json:"discipleshipStage"`
-	MentorName         string `json:"mentorName"`
-	JoinedDate         string `json:"joinedDate"`
-	Status             string `json:"status"`
+	ID                string `gorm:"primaryKey" json:"id"`
+	Name              string `json:"name"`
+	CityID            string `json:"cityId"`
+	CityName          string `json:"cityName"`
+	Phone             string `json:"phone"`
+	DiscipleshipStage string `json:"discipleshipStage"`
+	MentorName        string `json:"mentorName"`
+	JoinedDate        string `json:"joinedDate"`
+	Status            string `json:"status"`
 }
 
 type BeritaAcara struct {
@@ -53,17 +53,17 @@ type BeritaAcara struct {
 }
 
 type JurnalPA struct {
-	ID          string `gorm:"primaryKey" json:"id"`
-	CityID      string `json:"cityId"`
-	CityName    string `json:"cityName"`
-	Theme       string `json:"theme"`
-	Scripture   string `json:"scripture"`
-	Focus       string `json:"focus"`
-	Date        string `json:"date"`
-	MentorName  string `json:"mentorName"`
-	MenteeName  string `json:"menteeName"`
-	Notes       string `json:"notes"`
-	Image       string `json:"image"`
+	ID         string `gorm:"primaryKey" json:"id"`
+	CityID     string `json:"cityId"`
+	CityName   string `json:"cityName"`
+	Theme      string `json:"theme"`
+	Scripture  string `json:"scripture"`
+	Focus      string `json:"focus"`
+	Date       string `json:"date"`
+	MentorName string `json:"mentorName"`
+	MenteeName string `json:"menteeName"`
+	Notes      string `json:"notes"`
+	Image      string `json:"image"`
 }
 
 type DonationCampaign struct {
@@ -74,6 +74,9 @@ type DonationCampaign struct {
 	CollectedAmount float64 `json:"collectedAmount"`
 	Description     string  `json:"description"`
 	BannerUrl       string  `json:"bannerUrl"`
+	BankName        string  `json:"bankName"`
+	AccountNumber   string  `json:"accountNumber"`
+	AccountName     string  `json:"accountName"`
 	DonorsCount     int     `json:"donorsCount"`
 	DaysRemaining   int     `json:"daysRemaining"`
 }
@@ -98,21 +101,21 @@ type DiscipleshipLink struct {
 }
 
 type JobOpportunity struct {
-	ID              string         `gorm:"primaryKey" json:"id"`
-	Title           string         `json:"title"`
-	Company         string         `json:"company"`
-	LogoUrl         string         `json:"logoUrl"`
-	Location        string         `json:"location"`
-	Salary          string         `json:"salary"`
-	JobType         string         `json:"jobType"`
-	Category        string         `json:"category"`
-	Description     string         `json:"description"`
-	Requirements    pq.StringArray `gorm:"type:text[]" json:"requirements"`
+	ID               string         `gorm:"primaryKey" json:"id"`
+	Title            string         `json:"title"`
+	Company          string         `json:"company"`
+	LogoUrl          string         `json:"logoUrl"`
+	Location         string         `json:"location"`
+	Salary           string         `json:"salary"`
+	JobType          string         `json:"jobType"`
+	Category         string         `json:"category"`
+	Description      string         `json:"description"`
+	Requirements     pq.StringArray `gorm:"type:text[]" json:"requirements"`
 	Responsibilities pq.StringArray `gorm:"type:text[]" json:"responsibilities"`
-	ContactInfo     string         `json:"contactInfo"`
-	PostedDate      string         `json:"postedDate"`
-	Status          string         `json:"status"`
-	ApplicantsCount int            `json:"applicantsCount"`
+	ContactInfo      string         `json:"contactInfo"`
+	PostedDate       string         `json:"postedDate"`
+	Status           string         `json:"status"`
+	ApplicantsCount  int            `json:"applicantsCount"`
 }
 
 type JobApplication struct {
