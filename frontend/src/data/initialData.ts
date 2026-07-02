@@ -177,7 +177,7 @@ export const initialMembers: Member[] = [
     cityId: "city-1",
     cityName: "Surabaya",
     phone: "081234567890",
-    discipleshipStage: "Pembuat Murid",
+    discipleshipStage: "Pekerja",
     mentorName: "Ev. Stefanus",
     joinedDate: "2021-04-01",
     status: "active",
@@ -188,7 +188,7 @@ export const initialMembers: Member[] = [
     cityId: "city-1",
     cityName: "Surabaya",
     phone: "085298765432",
-    discipleshipStage: "Murid Bertumbuh",
+    discipleshipStage: "Jemaat",
     mentorName: "Yosua Reynaldi",
     joinedDate: "2022-02-15",
     status: "active",
@@ -199,7 +199,7 @@ export const initialMembers: Member[] = [
     cityId: "city-2",
     cityName: "Kupang",
     phone: "082111222333",
-    discipleshipStage: "Murid Baru",
+    discipleshipStage: "Jemaat",
     mentorName: "Pdt. Markus",
     joinedDate: "2022-09-01",
     status: "active",
@@ -210,7 +210,7 @@ export const initialMembers: Member[] = [
     cityId: "city-2",
     cityName: "Kupang",
     phone: "081344556677",
-    discipleshipStage: "Pra-Murid",
+    discipleshipStage: "Jemaat",
     mentorName: "Samuel Ndolu",
     joinedDate: "2024-05-10",
     status: "active",
@@ -221,7 +221,7 @@ export const initialMembers: Member[] = [
     cityId: "city-3",
     cityName: "Pontianak",
     phone: "089677889900",
-    discipleshipStage: "Murid Bertumbuh",
+    discipleshipStage: "Jemaat",
     mentorName: "Ev. Rachel",
     joinedDate: "2023-03-22",
     status: "active",
@@ -232,7 +232,7 @@ export const initialMembers: Member[] = [
     cityId: "city-4",
     cityName: "Toraja",
     phone: "081122334455",
-    discipleshipStage: "Pembuat Murid",
+    discipleshipStage: "Pekerja",
     mentorName: "Ev. Yulius",
     joinedDate: "2023-10-01",
     status: "active",
@@ -330,6 +330,9 @@ export const initialDonationCampaigns: DonationCampaign[] = [
     collectedAmount: 38750000,
     description: "Hujan deras berhari-hari memicu musibah banjir bandang di wilayah pinggiran Kupang. Beberapa rumah jemaat dan pos pemuridan Sion Ministry mengalami kerusakan berat. Mari bergotong-royong memberikan bantuan bahan makanan pokok, air bersih, pakaian layak pakai, dan dana renovasi pos pelayanan.",
     bannerUrl: "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800&auto=format&fit=crop&q=80",
+    bankName: "BCA",
+    accountNumber: "7788123456",
+    accountName: "Yayasan Sion Care Indonesia",
     donorsCount: 48,
     daysRemaining: 15
   },
@@ -341,6 +344,9 @@ export const initialDonationCampaigns: DonationCampaign[] = [
     collectedAmount: 18200000,
     description: "Investasi berharga untuk masa depan amanat agung. Program ini bertujuan menggalang dana pendidikan (beasiswa SPP, buku, penunjang belajar) bagi anak-anak pekerja misionaris di pelosok tanah air dan mentee muda berprestasi yang terkendala biaya sekolah.",
     bannerUrl: "https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?w=800&auto=format&fit=crop&q=80",
+    bankName: "Mandiri",
+    accountNumber: "1310012345678",
+    accountName: "Sion Academy Scholarship",
     donorsCount: 29,
     daysRemaining: 30
   },
@@ -352,6 +358,9 @@ export const initialDonationCampaigns: DonationCampaign[] = [
     collectedAmount: 45000000,
     description: "Mari bersama-sama mewujudkan sarana ibadah dan tempat belajar pemuridan yang layak di pedalaman Manokwari, Papua Barat. Tempat ini akan digunakan untuk pusat pembekalan pemuda, sekolah Alkitab anak-anak, dan pusat ketrampilan hidup jemaat lokal.",
     bannerUrl: "https://images.unsplash.com/photo-1541976844346-f18aeac57b06?w=800&auto=format&fit=crop&q=80",
+    bankName: "BRI",
+    accountNumber: "002101123456789",
+    accountName: "Sion Mission Board",
     donorsCount: 15,
     daysRemaining: 45
   }
@@ -491,4 +500,3 @@ export const initialJobs: JobOpportunity[] = [
     applicantsCount: 5
   }
 ];
-

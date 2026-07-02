@@ -90,10 +90,8 @@ export default function Dashboard({
 
   // Spiritual maturity breakdown for SVG progress indicators
   const stages = {
-    "Pra-Murid": members.filter((m) => m.discipleshipStage === "Pra-Murid").length,
-    "Murid Baru": members.filter((m) => m.discipleshipStage === "Murid Baru").length,
-    "Murid Bertumbuh": members.filter((m) => m.discipleshipStage === "Murid Bertumbuh").length,
-    "Pembuat Murid": members.filter((m) => m.discipleshipStage === "Pembuat Murid").length,
+    "Pekerja": members.filter((m) => m.discipleshipStage === "Pekerja").length,
+    "Jemaat": members.filter((m) => m.discipleshipStage === "Jemaat").length,
   };
 
   const formatRupiah = (amount: number) => {
@@ -249,8 +247,8 @@ export default function Dashboard({
         <div className="lg:col-span-2 space-y-6">
           {/* Spiritual Maturity Breakdown Visualization (Custom SVG Chart) */}
           <div className="bg-white p-6 rounded-3xl border border-slate-100 material-shadow-1">
-            <h3 className="font-display font-bold text-base text-slate-900">Perkembangan Tahapan Pemuridan</h3>
-            <p className="text-xs text-slate-400 mt-1">Mengukur kedewasaan rohani seluruh jemaat yang dibimbing di Sion Ministry</p>
+            <h3 className="font-display font-bold text-base text-slate-900">Komposisi Peran Pemuridan</h3>
+            <p className="text-xs text-slate-400 mt-1">Melihat pembagian pekerja dan jemaat yang dibimbing di Sion Ministry</p>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-6 items-center">
               {/* Custom SVG Donut Chart */}
@@ -259,11 +257,9 @@ export default function Dashboard({
                   {/* Outer circle track */}
                   <circle cx="100" cy="100" r="70" fill="transparent" stroke="#f1f5f9" strokeWidth="20" />
                   
-                  {/* Draw 4 stylized semi-circular rings showing proportions of each level */}
-                  <circle cx="100" cy="100" r="75" fill="transparent" stroke="#cbd5e1" strokeWidth="8" strokeDasharray="471" strokeDashoffset={471 - (471 * (stages["Pra-Murid"] / (totalMembers || 1)))} strokeLinecap="round" />
-                  <circle cx="100" cy="100" r="60" fill="transparent" stroke="#ef4444" strokeWidth="8" strokeDasharray="377" strokeDashoffset={377 - (377 * (stages["Murid Baru"] / (totalMembers || 1)))} strokeLinecap="round" />
-                  <circle cx="100" cy="100" r="45" fill="transparent" stroke="#EB2323" strokeWidth="8" strokeDasharray="282" strokeDashoffset={282 - (282 * (stages["Murid Bertumbuh"] / (totalMembers || 1)))} strokeLinecap="round" />
-                  <circle cx="100" cy="100" r="30" fill="transparent" stroke="#10b981" strokeWidth="8" strokeDasharray="188" strokeDashoffset={188 - (188 * (stages["Pembuat Murid"] / (totalMembers || 1)))} strokeLinecap="round" />
+                  {/* Draw role rings showing worker and congregation proportions. */}
+                  <circle cx="100" cy="100" r="68" fill="transparent" stroke="#EB2323" strokeWidth="10" strokeDasharray="427" strokeDashoffset={427 - (427 * (stages["Pekerja"] / (totalMembers || 1)))} strokeLinecap="round" />
+                  <circle cx="100" cy="100" r="48" fill="transparent" stroke="#10b981" strokeWidth="10" strokeDasharray="302" strokeDashoffset={302 - (302 * (stages["Jemaat"] / (totalMembers || 1)))} strokeLinecap="round" />
                 </svg>
               </div>
 
@@ -274,10 +270,7 @@ export default function Dashboard({
                   const pct = totalMembers > 0 ? Math.round((count / totalMembers) * 100) : 0;
                   
                   // Color dot indicator mapping
-                  const dotColor = 
-                    stage === "Pra-Murid" ? "bg-slate-400" :
-                    stage === "Murid Baru" ? "bg-red-400" :
-                    stage === "Murid Bertumbuh" ? "bg-indigo-600" : "bg-emerald-500";
+                  const dotColor = stage === "Pekerja" ? "bg-indigo-600" : "bg-emerald-500";
 
                   return (
                     <div key={stage} className="flex items-center justify-between">
@@ -392,7 +385,7 @@ export default function Dashboard({
                     {item.description}
                   </p>
                   <div className="flex items-center justify-between pt-1 text-[10px] border-t border-dashed border-slate-200">
-                    <span className="text-slate-400">Pekerja: <strong className="text-slate-600">{item.workerName}</strong></span>
+                    <span className="text-slate-400">Pembawa Sharing: <strong className="text-slate-600">{item.workerName}</strong></span>
                     <span className="font-mono text-indigo-500 font-bold">{item.attendeesCount} Jemaat</span>
                   </div>
                 </div>
@@ -448,6 +441,7 @@ export default function Dashboard({
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tanggal Mulai Dijangkau</label>
                 <input 
                   type="date" 
+                  placeholder="Pilih tanggal mulai dijangkau"
                   value={newCityReachedDate}
                   onChange={(e) => setNewCityReachedDate(e.target.value)}
                   className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
@@ -464,6 +458,7 @@ export default function Dashboard({
                 <input 
                   type="number" 
                   min="0"
+                  placeholder="Contoh: 3"
                   value={newCityWorkersCount}
                   onChange={(e) => setNewCityWorkersCount(Number(e.target.value))}
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"

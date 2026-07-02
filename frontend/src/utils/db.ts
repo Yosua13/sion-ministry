@@ -16,6 +16,18 @@ const STORAGE_KEYS = {
 };
 
 export class SionDatabase {
+  private static normalizeMemberStage(stage?: string): Member["discipleshipStage"] {
+    if (stage === "Pekerja" || stage === "Pembuat Murid") return "Pekerja";
+    return "Jemaat";
+  }
+
+  private static normalizeMembers(members: Member[]): Member[] {
+    return members.map((member) => ({
+      ...member,
+      discipleshipStage: this.normalizeMemberStage(member.discipleshipStage)
+    }));
+  }
+
   // Initialize standard data if empty
   static init() {
     if (!localStorage.getItem(STORAGE_KEYS.CITIES)) {
@@ -26,6 +38,19 @@ export class SionDatabase {
     }
     if (!localStorage.getItem(STORAGE_KEYS.MEMBERS)) {
       localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(initialMembers));
+    }
+    const storedMembers = localStorage.getItem(STORAGE_KEYS.MEMBERS);
+    if (storedMembers) {
+      try {
+        const parsedMembers = JSON.parse(storedMembers) as Member[];
+        const normalizedMembers = this.normalizeMembers(parsedMembers);
+        const hasLegacyStage = parsedMembers.some((member, index) => member.discipleshipStage !== normalizedMembers[index].discipleshipStage);
+        if (hasLegacyStage) {
+          localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(normalizedMembers));
+        }
+      } catch {
+        localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(initialMembers));
+      }
     }
     if (!localStorage.getItem(STORAGE_KEYS.BERITA)) {
       localStorage.setItem(STORAGE_KEYS.BERITA, JSON.stringify(initialBeritaAcara));
@@ -94,7 +119,7 @@ export class SionDatabase {
 
       if (cities) localStorage.setItem(STORAGE_KEYS.CITIES, JSON.stringify(cities));
       if (modules) localStorage.setItem(STORAGE_KEYS.MODULES, JSON.stringify(modules));
-      if (members) localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(members));
+      if (members) localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(this.normalizeMembers(members)));
       if (berita) localStorage.setItem(STORAGE_KEYS.BERITA, JSON.stringify(berita));
       if (journals) localStorage.setItem(STORAGE_KEYS.JURNAL_PA, JSON.stringify(journals));
       if (campaigns) localStorage.setItem(STORAGE_KEYS.CAMPAIGNS, JSON.stringify(campaigns));

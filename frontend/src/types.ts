@@ -17,7 +17,7 @@ export interface Member {
   cityId: string;
   cityName: string;
   phone: string;
-  discipleshipStage: "Pra-Murid" | "Murid Baru" | "Murid Bertumbuh" | "Pembuat Murid";
+  discipleshipStage: "Pekerja" | "Jemaat";
   mentorName: string;
   joinedDate: string;
   status: "active" | "inactive";
@@ -74,6 +74,9 @@ export interface DonationCampaign {
   collectedAmount: number;
   description: string;
   bannerUrl: string;
+  bankName?: string;
+  accountNumber?: string;
+  accountName?: string;
   donorsCount: number;
   daysRemaining: number;
 }
