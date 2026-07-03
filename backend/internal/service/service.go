@@ -62,15 +62,26 @@ type AIService interface {
 type SyncService interface {
 	Sync(payload *models.SyncPayload) error
 }
+
+type AuthService interface {
+	Register(name string, email string, password string, role string, cityID string, cityName string) (*models.User, error)
+	Login(email string, password string) (*models.AuthResponse, error)
+	GetUserByToken(token string) (*models.User, error)
+	Logout(token string) error
+	GetUsers() ([]models.User, error)
+	ApproveUser(id string) (*models.User, error)
+}
+
 type Service struct {
-	City       CityService
-	Member     MemberService
-	Berita     BeritaService
-	Jurnal     JurnalService
-	Donation   DonationService
-	Link       LinkService
-	Job        JobService
-	Module     ModuleService
-	AI         AIService
-	Sync       SyncService
+	Auth     AuthService
+	City     CityService
+	Member   MemberService
+	Berita   BeritaService
+	Jurnal   JurnalService
+	Donation DonationService
+	Link     LinkService
+	Job      JobService
+	Module   ModuleService
+	AI       AIService
+	Sync     SyncService
 }
