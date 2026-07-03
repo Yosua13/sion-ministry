@@ -15,7 +15,8 @@ import {
   MessageSquare,
   Share2,
   Trash2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  AlertCircle
 } from "lucide-react";
 import { BeritaAcara, City } from "../types";
 import ConfirmDialog from "./ConfirmDialog";
@@ -91,11 +92,6 @@ export default function BeritaAcaraComponent({
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [selectedBerita, setSelectedBerita] = useState<BeritaAcara | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BeritaAcara | null>(null);
-  const [aiNotice, setAiNotice] = useState<{
-    title: string;
-    message: string;
-    tone: "info" | "success";
-  } | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
@@ -220,13 +216,18 @@ export default function BeritaAcaraComponent({
 
   const handleAiDraft = async () => {
     if (!formDescription && !formTitle) {
-      setAiNotice({
-        title: "Butuh Bahan Draf",
-        message: "Isi judul kegiatan atau tulis beberapa poin catatan terlebih dahulu. AI Sion akan lebih mudah merapikan narasi jika ada bahan dasar pelayanan yang bisa diolah.",
-        tone: "info"
-      });
+      setErrors(prev => ({
+        ...prev,
+        ai: "Isi judul kegiatan atau tulis beberapa poin catatan terlebih dahulu agar AI Sion dapat merapikan narasi!"
+      }));
       return;
     }
+
+    setErrors(prev => {
+      const next = { ...prev };
+      delete next.ai;
+      return next;
+    });
 
     setIsAiDrafting(true);
     try {
@@ -250,11 +251,10 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
     } catch {
       const selectedCity = cities.find((city) => city.id === formCityId)?.name || "pos pelayanan";
       setFormDescription(`Kegiatan ${formType || "pelayanan"} bertema "${formTitle || "Tuhan Yesus Penyelamat"}" di ${selectedCity} berlangsung dengan tertib, hangat, dan penuh sukacita. Firman serta sharing yang dibawakan meneguhkan jemaat untuk terus bertumbuh dalam iman dan saling melayani. Pokok doa diarahkan bagi multiplikasi murid, kesatuan pekerja, dan terbukanya hati masyarakat untuk menerima kasih Kristus.`);
-      setAiNotice({
-        title: "Draf Lokal Sudah Disiapkan",
-        message: "Koneksi AI belum memberi respons, jadi Sion Academy menyiapkan draf lokal yang tetap bisa Anda edit. Silakan poles bagian yang perlu dibuat lebih spesifik sebelum disimpan.",
-        tone: "success"
-      });
+      setErrors(prev => ({
+        ...prev,
+        ai: "AI Sion sedang sibuk. Menggunakan draf berita acara pelayanan lokal..."
+      }));
     } finally {
       setIsAiDrafting(false);
     }
@@ -871,6 +871,12 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
                     <span>{isAiDrafting ? "Mendraf..." : "Tulis dengan AI Sion"}</span>
                   </button>
                 </div>
+                {errors.ai && (
+                  <div className="mb-2 bg-rose-50 border border-rose-100 text-rose-800 p-2.5 rounded-xl text-[10px] flex items-center gap-1.5 animate-in fade-in duration-150 text-left">
+                    <AlertCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                    <span className="font-semibold">{errors.ai}</span>
+                  </div>
+                )}
                 <textarea
                   rows={4}
                   placeholder="Misalkan: Ibadah lancar dipenuhi kasih Allah. Doakan agar jemaat terus bertekun dalam kelompok sel pemuridan minggu depan..."
@@ -915,30 +921,6 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
         onCancel={() => setDeleteTarget(null)}
         onConfirm={handleConfirmDelete}
       />
-      {aiNotice && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-3xl bg-white border border-slate-100 material-shadow-3 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-6 text-center">
-              <div className={`mx-auto h-12 w-12 rounded-2xl flex items-center justify-center border mb-4 ${
-                aiNotice.tone === "success"
-                  ? "bg-emerald-50 text-emerald-600 border-emerald-100"
-                  : "bg-indigo-50 text-indigo-600 border-indigo-100"
-              }`}>
-                <Sparkles className="h-6 w-6" />
-              </div>
-              <h3 className="font-display font-bold text-base text-slate-950">{aiNotice.title}</h3>
-              <p className="mt-2 text-xs text-slate-500 leading-relaxed">{aiNotice.message}</p>
-              <button
-                type="button"
-                onClick={() => setAiNotice(null)}
-                className="mt-5 w-full rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-800 transition-all"
-              >
-                Mengerti
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {showSuccessAlert && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col items-center max-w-xs w-full text-center material-shadow-3 animate-scale-up">
