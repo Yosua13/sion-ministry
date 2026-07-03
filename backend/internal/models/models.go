@@ -2,6 +2,32 @@ package models
 
 import "github.com/lib/pq"
 
+type User struct {
+	ID           string `gorm:"primaryKey" json:"id"`
+	Name         string `json:"name"`
+	Email        string `gorm:"uniqueIndex" json:"email"`
+	PasswordHash string `json:"-"`
+	Role         string `json:"role"`
+	Status       string `json:"status"`
+	CityID       string `json:"cityId"`
+	CityName     string `json:"cityName"`
+	CreatedAt    string `json:"createdAt"`
+	ApprovedAt   string `json:"approvedAt"`
+}
+
+type AuthSession struct {
+	Token     string `gorm:"primaryKey" json:"token"`
+	UserID    string `json:"userId"`
+	ExpiresAt string `json:"expiresAt"`
+	CreatedAt string `json:"createdAt"`
+}
+
+type AuthResponse struct {
+	Token     string `json:"token"`
+	User      User   `json:"user"`
+	ExpiresAt string `json:"expiresAt"`
+}
+
 type City struct {
 	ID            string `gorm:"primaryKey" json:"id"`
 	Name          string `json:"name"`

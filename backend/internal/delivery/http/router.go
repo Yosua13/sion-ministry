@@ -23,52 +23,62 @@ func SetupRouter(app *fiber.App, handlers *Handlers) {
 	// Health check
 	api.Get("/health", handlers.HealthCheck)
 
+	// Authentication
+	api.Post("/auth/register", handlers.Register)
+	api.Post("/auth/login", handlers.Login)
+
+	protected := api.Group("", handlers.RequireAuth)
+	protected.Get("/auth/me", handlers.Me)
+	protected.Post("/auth/logout", handlers.Logout)
+	protected.Get("/auth/users", RequireRoles("admin"), handlers.GetUsers)
+	protected.Put("/auth/users/:id/approve", RequireRoles("admin"), handlers.ApproveUser)
+
 	// AI Assistant
-	api.Post("/gemini/assistant", handlers.AiAssistant)
+	protected.Post("/gemini/assistant", handlers.AiAssistant)
 
 	// Sync / Proxy Endpoints
-	api.Post("/sion-proxy", handlers.LambdaProxy) // Standard legacy proxy
-	api.Post("/sync", handlers.Sync)             // Real local Postgres sync
+	protected.Post("/sion-proxy", handlers.LambdaProxy) // Standard legacy proxy
+	protected.Post("/sync", handlers.Sync)              // Real local Postgres sync
 
 	// Cities
-	api.Get("/cities", handlers.GetCities)
-	api.Post("/cities", handlers.CreateCity)
+	protected.Get("/cities", handlers.GetCities)
+	protected.Post("/cities", RequireRoles("admin", "pekerja"), handlers.CreateCity)
 
 	// Members
-	api.Get("/members", handlers.GetMembers)
-	api.Post("/members", handlers.CreateMember)
-	api.Put("/members/:id", handlers.UpdateMember)
-	api.Delete("/members/:id", handlers.DeleteMember)
+	protected.Get("/members", RequireRoles("admin", "pekerja"), handlers.GetMembers)
+	protected.Post("/members", RequireRoles("admin", "pekerja"), handlers.CreateMember)
+	protected.Put("/members/:id", RequireRoles("admin", "pekerja"), handlers.UpdateMember)
+	protected.Delete("/members/:id", RequireRoles("admin"), handlers.DeleteMember)
 
 	// Berita Acara
-	api.Get("/berita", handlers.GetBerita)
-	api.Post("/berita", handlers.CreateBerita)
-	api.Delete("/berita/:id", handlers.DeleteBerita)
+	protected.Get("/berita", RequireRoles("admin", "pekerja", "jemaat"), handlers.GetBerita)
+	protected.Post("/berita", RequireRoles("admin", "pekerja"), handlers.CreateBerita)
+	protected.Delete("/berita/:id", RequireRoles("admin"), handlers.DeleteBerita)
 
 	// Jurnal PA
-	api.Get("/jurnal-pa", handlers.GetJurnalPA)
-	api.Post("/jurnal-pa", handlers.CreateJurnalPA)
-	api.Delete("/jurnal-pa/:id", handlers.DeleteJurnalPA)
+	protected.Get("/jurnal-pa", RequireRoles("admin", "pekerja", "jemaat"), handlers.GetJurnalPA)
+	protected.Post("/jurnal-pa", RequireRoles("admin", "pekerja"), handlers.CreateJurnalPA)
+	protected.Delete("/jurnal-pa/:id", RequireRoles("admin"), handlers.DeleteJurnalPA)
 
 	// Donations
-	api.Get("/campaigns", handlers.GetCampaigns)
-	api.Post("/campaigns", handlers.CreateCampaign)
-	api.Get("/donations", handlers.GetDonationRecords)
-	api.Post("/donations", handlers.CreateDonationRecord)
+	protected.Get("/campaigns", handlers.GetCampaigns)
+	protected.Post("/campaigns", RequireRoles("admin", "pekerja"), handlers.CreateCampaign)
+	protected.Get("/donations", RequireRoles("admin", "pekerja", "jemaat"), handlers.GetDonationRecords)
+	protected.Post("/donations", RequireRoles("admin", "pekerja"), handlers.CreateDonationRecord)
 
 	// Links
-	api.Get("/links", handlers.GetLinks)
-	api.Post("/links", handlers.CreateLink)
-	api.Put("/links/:id", handlers.UpdateLink)
-	api.Delete("/links/:id", handlers.DeleteLink)
+	protected.Get("/links", handlers.GetLinks)
+	protected.Post("/links", RequireRoles("admin", "pekerja"), handlers.CreateLink)
+	protected.Put("/links/:id", RequireRoles("admin", "pekerja"), handlers.UpdateLink)
+	protected.Delete("/links/:id", RequireRoles("admin"), handlers.DeleteLink)
 
 	// Jobs
-	api.Get("/jobs", handlers.GetJobs)
-	api.Post("/jobs", handlers.CreateJob)
-	api.Get("/applications", handlers.GetJobApplications)
-	api.Post("/applications", handlers.CreateJobApplication)
+	protected.Get("/jobs", handlers.GetJobs)
+	protected.Post("/jobs", RequireRoles("admin", "pekerja"), handlers.CreateJob)
+	protected.Get("/applications", RequireRoles("admin", "pekerja"), handlers.GetJobApplications)
+	protected.Post("/applications", handlers.CreateJobApplication)
 
 	// Modules
-	api.Get("/modules", handlers.GetModules)
-	api.Put("/modules/:id", handlers.UpdateModule)
+	protected.Get("/modules", handlers.GetModules)
+	protected.Put("/modules/:id", handlers.UpdateModule)
 }

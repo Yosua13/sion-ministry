@@ -2,6 +2,7 @@ package http
 
 import (
 	"log"
+	"strings"
 
 	"backend/internal/models"
 	"backend/internal/service"
@@ -24,6 +25,81 @@ func (h *Handlers) HealthCheck(c *fiber.Ctx) error {
 		"status": "ok",
 		"time":   c.Context().ConnTime().String(),
 	})
+}
+
+func getBearerToken(c *fiber.Ctx) string {
+	authHeader := c.Get("Authorization")
+	if authHeader == "" {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+}
+
+func (h *Handlers) Register(c *fiber.Ctx) error {
+	var req struct {
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
+		Role     string `json:"role"`
+		CityID   string `json:"cityId"`
+		CityName string `json:"cityName"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+	user, err := h.services.Auth.Register(req.Name, req.Email, req.Password, req.Role, req.CityID, req.CityName)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.Status(fiber.StatusCreated).JSON(user)
+}
+
+func (h *Handlers) Login(c *fiber.Ctx) error {
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+	session, err := h.services.Auth.Login(req.Email, req.Password)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(session)
+}
+
+func (h *Handlers) Me(c *fiber.Ctx) error {
+	token := getBearerToken(c)
+	user, err := h.services.Auth.GetUserByToken(token)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(user)
+}
+
+func (h *Handlers) Logout(c *fiber.Ctx) error {
+	token := getBearerToken(c)
+	if token != "" {
+		_ = h.services.Auth.Logout(token)
+	}
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func (h *Handlers) GetUsers(c *fiber.Ctx) error {
+	users, err := h.services.Auth.GetUsers()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(users)
+}
+
+func (h *Handlers) ApproveUser(c *fiber.Ctx) error {
+	user, err := h.services.Auth.ApproveUser(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(user)
 }
 
 // Cities Handlers
@@ -321,11 +397,11 @@ func (h *Handlers) Sync(c *fiber.Ctx) error {
 // original lambda proxy handler (in case the frontend calls it)
 func (h *Handlers) LambdaProxy(c *fiber.Ctx) error {
 	lambdaURL := "https://uzepc6y2d76yrnmctvuc7j7mqe0xvbii.lambda-url.ap-southeast-3.on.aws/"
-	
+
 	// Create client request
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
-	
+
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
 
