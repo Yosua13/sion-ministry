@@ -80,6 +80,12 @@ func (s *syncService) Sync(payload *models.SyncPayload) error {
 					return fmt.Errorf("failed to decode berita: %w", err)
 				}
 				if item.Action == "create" || item.Action == "update" {
+					for i, img := range berita.Images {
+						newPath, err := saveBase64Image(img, "berita")
+						if err == nil {
+							berita.Images[i] = newPath
+						}
+					}
 					if err := tx.Save(berita).Error; err != nil {
 						return err
 					}
@@ -95,6 +101,10 @@ func (s *syncService) Sync(payload *models.SyncPayload) error {
 					return fmt.Errorf("failed to decode jurnal_pa: %w", err)
 				}
 				if item.Action == "create" || item.Action == "update" {
+					newPath, err := saveBase64Image(jurnal.Image, "jurnal")
+					if err == nil {
+						jurnal.Image = newPath
+					}
 					if err := tx.Save(jurnal).Error; err != nil {
 						return err
 					}
