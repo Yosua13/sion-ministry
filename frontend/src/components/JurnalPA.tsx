@@ -12,7 +12,8 @@ import {
   X,
   PlusCircle,
   Hash,
-  Compass
+  Compass,
+  AlertCircle
 } from "lucide-react";
 import { JurnalPA, City, Member } from "../types";
 import ConfirmDialog from "./ConfirmDialog";
@@ -125,9 +126,15 @@ export default function JurnalPAComponent({
 
   const handleAiReflect = async () => {
     if (!formScripture || !formTheme) {
-      alert("Silakan isi Tema PA dan Ayat Alkitab (Nats) terlebih dahulu agar AI Sion dapat membantu menyusun draf catatan pendampingan rohani!");
+      setErrors(prev => ({ ...prev, ai: "Silakan isi Tema PA dan Ayat Alkitab (Nats) terlebih dahulu agar AI Sion dapat membantu menyusun draf catatan pendampingan rohani!" }));
       return;
     }
+
+    setErrors(prev => {
+      const next = { ...prev };
+      delete next.ai;
+      return next;
+    });
 
     setIsAiDrafting(true);
     try {
@@ -144,7 +151,7 @@ export default function JurnalPAComponent({
         throw new Error("API error");
       }
     } catch (err) {
-      alert("AI Sion sedang sibuk. Menghasilkan refleksi bimbingan pemuridan otomatis...");
+      setErrors(prev => ({ ...prev, ai: "AI Sion sedang sibuk. Menghasilkan refleksi bimbingan pemuridan otomatis..." }));
       setFormNotes(`Bersyukur atas bimbingan hari ini mengenai "${formTheme}" (${formScripture}). Bersama ${formMenteeName || "Mentee"}, kami merenungkan pentingnya menghidupi kebenaran ini secara riil. Pokok doa difokuskan agar benih firman ini bertumbuh lebat dan berbuah dalam ketaatan murid.`);
     } finally {
       setIsAiDrafting(false);
@@ -640,6 +647,12 @@ export default function JurnalPAComponent({
                     <span>{isAiDrafting ? "Menyusun..." : "Susun dengan AI Sion"}</span>
                   </button>
                 </div>
+                {errors.ai && (
+                  <div className="mb-2 bg-rose-50 border border-rose-100 text-rose-800 p-2.5 rounded-xl text-[10px] flex items-center gap-1.5 animate-in fade-in duration-150 text-left">
+                    <AlertCircle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                    <span className="font-semibold">{errors.ai}</span>
+                  </div>
+                )}
                 <textarea
                   rows={4}
                   placeholder="Ceritakan jalannya PA. Apa komitmen iman mentee Anda dari pembacaan alkitab kali ini? Tulis di sini..."
