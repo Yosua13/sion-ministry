@@ -27,6 +27,7 @@ func main() {
 
 	// 3. Initialize Repositories
 	cityRepo := repository.NewCityRepository(db)
+	authRepo := repository.NewAuthRepository(db)
 	memberRepo := repository.NewMemberRepository(db)
 	beritaRepo := repository.NewBeritaRepository(db)
 	jurnalRepo := repository.NewJurnalRepository(db)
@@ -36,6 +37,7 @@ func main() {
 	moduleRepo := repository.NewModuleRepository(db)
 
 	// 4. Initialize Services
+	authService := service.NewAuthService(authRepo)
 	cityService := service.NewCityService(cityRepo)
 	memberService := service.NewMemberService(memberRepo, cityRepo)
 	beritaService := service.NewBeritaService(beritaRepo, cityRepo)
@@ -48,6 +50,7 @@ func main() {
 	syncService := service.NewSyncService(db, cityRepo, memberRepo, beritaRepo, jurnalRepo, linkRepo)
 
 	services := &service.Service{
+		Auth:     authService,
 		City:     cityService,
 		Member:   memberService,
 		Berita:   beritaService,
@@ -70,6 +73,9 @@ func main() {
 
 	// Setup routes
 	delivery.SetupRouter(app, handlers)
+
+	// Static uploads directory
+	app.Static("/api/uploads", "./uploads")
 
 	// 7. Serve Frontend static assets in Production
 	if cfg.AppEnv == "production" {
