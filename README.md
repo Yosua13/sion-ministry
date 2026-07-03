@@ -205,3 +205,13 @@ Pastikan database PostgreSQL Anda berjalan secara lokal pada port default `5432`
    npm run dev
    ```
 4. Buka peramban (browser) Anda dan akses alamat URL yang tampil di terminal (biasanya `http://localhost:5173`).
+
+---
+
+## 🔐 Autentikasi & Akun Default
+
+Platform ini dilengkapi dengan sistem Autentikasi dan Role-Based Access Control (RBAC) untuk Admin, Pekerja, dan Jemaat.
+
+### Akun Admin Default (Seeding)
+
+Setelah masuk, Admin dapat menyetujui (approve) registrasi baru untuk Pekerja dan mengelola seluruh data pelayanan.
