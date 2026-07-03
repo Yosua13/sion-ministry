@@ -14,6 +14,7 @@ import AiAssistant from "./components/AiAssistant";
 import Pekerjaan from "./components/Pekerjaan";
 import UserManagement from "./components/UserManagement";
 import RoleHome from "./components/RoleHome";
+import Toast from "./components/Toast";
 import { Wifi, WifiOff, Bell, Menu, X, RefreshCw, LogOut } from "lucide-react";
 
 export default function App() {
@@ -21,6 +22,17 @@ export default function App() {
   useEffect(() => {
     SionDatabase.init();
   }, []);
+
+  // Toast state
+  const [toast, setToast] = useState<{ open: boolean; message: string; type: "success" | "error" | "info" | "warning" }>({
+    open: false,
+    message: "",
+    type: "success"
+  });
+
+  const showToast = (message: string, type: "success" | "error" | "info" | "warning" = "success") => {
+    setToast({ open: true, message, type });
+  };
 
   // State managers
   const [activeTab, setActiveTab] = useState<string>("dashboard");
@@ -198,10 +210,10 @@ export default function App() {
     try {
       const res = await SionDatabase.syncWithCloud();
       if (res.success) {
-        alert(`Sinkronisasi sukses! ${res.syncedItemsCount} data perubahan berhasil diunggah ke server cloud Sion Academy.`);
+        showToast(`Sinkronisasi sukses! ${res.syncedItemsCount} data perubahan berhasil diunggah ke server cloud Sion Academy.`, "success");
       }
     } catch (err: any) {
-      alert(`Sinkronisasi gagal: ${err.message}`);
+      showToast(`Sinkronisasi gagal: ${err.message}`, "error");
     } finally {
       setIsSyncing(false);
       refreshData();
@@ -553,6 +565,12 @@ export default function App() {
         </main>
 
       </div>
+      <Toast
+        open={toast.open}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast(prev => ({ ...prev, open: false }))}
+      />
     </div>
   );
 }
