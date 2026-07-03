@@ -19,6 +19,12 @@ func (s *beritaService) GetAll() ([]models.BeritaAcara, error) {
 }
 
 func (s *beritaService) Create(berita *models.BeritaAcara) error {
+	for i, img := range berita.Images {
+		newPath, err := saveBase64Image(img, "berita")
+		if err == nil {
+			berita.Images[i] = newPath
+		}
+	}
 	if err := s.beritaRepo.Create(berita); err != nil {
 		return err
 	}

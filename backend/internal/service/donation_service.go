@@ -18,6 +18,10 @@ func (s *donationService) GetAllCampaigns() ([]models.DonationCampaign, error) {
 }
 
 func (s *donationService) CreateCampaign(campaign *models.DonationCampaign) error {
+	newPath, err := saveBase64Image(campaign.BannerUrl, "campaign")
+	if err == nil {
+		campaign.BannerUrl = newPath
+	}
 	return s.repo.CreateCampaign(campaign)
 }
 
