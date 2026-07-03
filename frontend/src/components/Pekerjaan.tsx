@@ -65,6 +65,14 @@ export default function Pekerjaan({ onBackToMain }: PekerjaanProps) {
   const [newResponsibilities, setNewResponsibilities] = useState("");
   const [newContact, setNewContact] = useState("");
   const [isPostSuccess, setIsPostSuccess] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Clear formError and errors when tab or modal changes
+  useEffect(() => {
+    setFormError(null);
+    setErrors({});
+  }, [jobTab, isApplyModalOpen]);
 
   // Load Data on Load
   useEffect(() => {
@@ -107,10 +115,18 @@ export default function Pekerjaan({ onBackToMain }: PekerjaanProps) {
     e.preventDefault();
     if (!applyingJob) return;
 
-    if (!applicantName || !applicantPhone || !applicantEmail) {
-      alert("Mohon isi nama, nomor telepon, dan email Anda.");
+    const tempErrors: Record<string, string> = {};
+    if (!applicantName.trim()) tempErrors.name = "Nama lengkap pelamar wajib diisi";
+    if (!applicantPhone.trim()) tempErrors.phone = "Nomor WA / Telepon wajib diisi";
+    if (!applicantEmail.trim()) tempErrors.email = "Alamat email wajib diisi";
+
+    if (Object.keys(tempErrors).length > 0) {
+      setErrors(tempErrors);
+      setFormError("Mohon lengkapi seluruh field wajib lamaran pekerjaan.");
       return;
     }
+    setErrors({});
+    setFormError(null);
 
     SionDatabase.addApplication({
       jobId: applyingJob.id,
@@ -139,10 +155,21 @@ export default function Pekerjaan({ onBackToMain }: PekerjaanProps) {
   // Handle Post New Job Submission
   const handlePostSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle || !newCompany || !newLocation || !newSalary || !newDescription || !newContact) {
-      alert("Mohon lengkapi seluruh field wajib lowongan pekerjaan.");
+    const tempErrors: Record<string, string> = {};
+    if (!newTitle.trim()) tempErrors.title = "Nama pekerjaan/lowongan wajib diisi";
+    if (!newCompany.trim()) tempErrors.company = "Instansi/nama organisasi wajib diisi";
+    if (!newLocation.trim()) tempErrors.location = "Lokasi penempatan wajib diisi";
+    if (!newSalary.trim()) tempErrors.salary = "Rentang kompensasi/gaji wajib diisi";
+    if (!newDescription.trim()) tempErrors.description = "Deskripsi pekerjaan wajib diisi";
+    if (!newContact.trim()) tempErrors.contact = "Kontak rekrutmen/hubung wajib diisi";
+
+    if (Object.keys(tempErrors).length > 0) {
+      setErrors(tempErrors);
+      setFormError("Mohon lengkapi seluruh field wajib lowongan pekerjaan.");
       return;
     }
+    setErrors({});
+    setFormError(null);
 
     const requirementsArray = newRequirements
       .split("\n")
@@ -597,6 +624,12 @@ export default function Pekerjaan({ onBackToMain }: PekerjaanProps) {
               </div>
             ) : (
               <form onSubmit={handlePostSubmit} className="space-y-4">
+                {formError && (
+                  <div className="bg-rose-50 border border-rose-100 text-rose-800 p-3.5 rounded-2xl text-xs flex items-center gap-2 animate-in fade-in duration-150">
+                    <AlertCircle className="h-4.5 w-4.5 text-rose-600 shrink-0" />
+                    <span className="font-semibold">{formError}</span>
+                  </div>
+                )}
                 
                 {/* Two-column details */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -609,8 +642,13 @@ export default function Pekerjaan({ onBackToMain }: PekerjaanProps) {
                       placeholder="Contoh: Guru Honorer Bahasa Inggris"
                       value={newTitle}
                       onChange={(e) => setNewTitle(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                      className={`w-full bg-slate-50 border rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all ${
+                        errors.title ? "border-red-400 focus:ring-red-500/20 bg-red-50/10" : "border-slate-200"
+                      }`}
                     />
+                    {errors.title && (
+                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.title}</span>
+                    )}
                   </div>
 
                   {/* Company Name */}
@@ -622,8 +660,13 @@ export default function Pekerjaan({ onBackToMain }: PekerjaanProps) {
                       placeholder="Contoh: Sekolah Kristen Sion Kupang"
                       value={newCompany}
                       onChange={(e) => setNewCompany(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                      className={`w-full bg-slate-50 border rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all ${
+                        errors.company ? "border-red-400 focus:ring-red-500/20 bg-red-50/10" : "border-slate-200"
+                      }`}
                     />
+                    {errors.company && (
+                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.company}</span>
+                    )}
                   </div>
 
                   {/* Job Category */}
@@ -669,8 +712,13 @@ export default function Pekerjaan({ onBackToMain }: PekerjaanProps) {
                       placeholder="Contoh: Kupang, NTT (On-site)"
                       value={newLocation}
                       onChange={(e) => setNewLocation(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                      className={`w-full bg-slate-50 border rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all ${
+                        errors.location ? "border-red-400 focus:ring-red-500/20 bg-red-50/10" : "border-slate-200"
+                      }`}
                     />
+                    {errors.location && (
+                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.location}</span>
+                    )}
                   </div>
 
                   {/* Salary range */}
@@ -682,8 +730,13 @@ export default function Pekerjaan({ onBackToMain }: PekerjaanProps) {
                       placeholder="Contoh: Rp 2.500.000 - Rp 3.500.000"
                       value={newSalary}
                       onChange={(e) => setNewSalary(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                      className={`w-full bg-slate-50 border rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all ${
+                        errors.salary ? "border-red-400 focus:ring-red-500/20 bg-red-50/10" : "border-slate-200"
+                      }`}
                     />
+                    {errors.salary && (
+                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.salary}</span>
+                    )}
                   </div>
                 </div>
 
@@ -696,8 +749,13 @@ export default function Pekerjaan({ onBackToMain }: PekerjaanProps) {
                     placeholder="Tuliskan overview tugas utama dan gambaran lingkungan kerja secara informatif..."
                     value={newDescription}
                     onChange={(e) => setNewDescription(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3.5 text-xs font-normal text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all leading-relaxed"
+                    className={`w-full bg-slate-50 border rounded-xl py-2.5 px-3.5 text-xs font-normal text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all leading-relaxed ${
+                      errors.description ? "border-red-400 focus:ring-red-500/20 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.description && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.description}</span>
+                  )}
                 </div>
 
                 {/* Requirements */}
@@ -733,8 +791,13 @@ export default function Pekerjaan({ onBackToMain }: PekerjaanProps) {
                     placeholder="Contoh: Pdt. Samuel (0812-3456-7890) atau hrd@sion.org"
                     value={newContact}
                     onChange={(e) => setNewContact(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    className={`w-full bg-slate-50 border rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all ${
+                      errors.contact ? "border-red-400 focus:ring-red-500/20 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.contact && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.contact}</span>
+                  )}
                 </div>
 
                 {/* Submit Action */}
@@ -841,6 +904,12 @@ export default function Pekerjaan({ onBackToMain }: PekerjaanProps) {
               </div>
             ) : (
               <form onSubmit={handleApplySubmit} className="space-y-4">
+                {formError && (
+                  <div className="bg-rose-50 border border-rose-100 text-rose-800 p-3.5 rounded-2xl text-xs flex items-center gap-2 animate-in fade-in duration-150">
+                    <AlertCircle className="h-4.5 w-4.5 text-rose-600 shrink-0" />
+                    <span className="font-semibold">{formError}</span>
+                  </div>
+                )}
                 {/* Applicant Name */}
                 <div className="space-y-1 text-left">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">Nama Lengkap Pelamar <span className="text-rose-500">*</span></label>
@@ -850,8 +919,13 @@ export default function Pekerjaan({ onBackToMain }: PekerjaanProps) {
                     placeholder="Contoh: Maria Alexandra"
                     value={applicantName}
                     onChange={(e) => setApplicantName(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    className={`w-full bg-slate-50 border rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all ${
+                      errors.name ? "border-red-400 focus:ring-red-500/20 bg-red-50/10" : "border-slate-200"
+                    }`}
                   />
+                  {errors.name && (
+                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.name}</span>
+                  )}
                 </div>
 
                 {/* Email and Phone */}
@@ -865,8 +939,13 @@ export default function Pekerjaan({ onBackToMain }: PekerjaanProps) {
                       placeholder="Contoh: 0812-3456-7890"
                       value={applicantPhone}
                       onChange={(e) => setApplicantPhone(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono"
+                      className={`w-full bg-slate-50 border rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono ${
+                        errors.phone ? "border-red-400 focus:ring-red-500/20 bg-red-50/10" : "border-slate-200"
+                      }`}
                     />
+                    {errors.phone && (
+                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.phone}</span>
+                    )}
                   </div>
 
                   {/* Email */}
@@ -878,8 +957,13 @@ export default function Pekerjaan({ onBackToMain }: PekerjaanProps) {
                       placeholder="Contoh: maria@mail.com"
                       value={applicantEmail}
                       onChange={(e) => setApplicantEmail(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono"
+                      className={`w-full bg-slate-50 border rounded-xl py-2.5 px-3.5 text-xs font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono ${
+                        errors.email ? "border-red-400 focus:ring-red-500/20 bg-red-50/10" : "border-slate-200"
+                      }`}
                     />
+                    {errors.email && (
+                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.email}</span>
+                    )}
                   </div>
                 </div>
 
