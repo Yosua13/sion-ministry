@@ -11,6 +11,28 @@ export interface DiscipleshipModule {
   isCompleted?: boolean;
 }
 
+export type AuthRole = "admin" | "pekerja" | "jemaat";
+
+export type AuthStatus = "active" | "pending" | "disabled";
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: AuthRole;
+  status: AuthStatus;
+  cityId?: string;
+  cityName?: string;
+  createdAt: string;
+  approvedAt?: string;
+}
+
+export interface AuthSession {
+  token: string;
+  user: AuthUser;
+  expiresAt: string;
+}
+
 export interface Member {
   id: string;
   name: string;
