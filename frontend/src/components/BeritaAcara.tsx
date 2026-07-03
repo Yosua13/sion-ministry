@@ -34,6 +34,7 @@ interface BeritaAcaraProps {
   onAddBerita: (berita: Omit<BeritaAcara, "id" | "synced" | "action">) => void;
   onDeleteBerita: (id: string) => void;
   isOnline: boolean;
+  readOnly?: boolean;
 }
 
 // Preset high-quality images for simulation/quick insert
@@ -52,7 +53,8 @@ export default function BeritaAcaraComponent({
   cities,
   onAddBerita,
   onDeleteBerita,
-  isOnline
+  isOnline,
+  readOnly = false
 }: BeritaAcaraProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCityId, setSelectedCityId] = useState<string>("All");
@@ -190,6 +192,7 @@ export default function BeritaAcaraComponent({
   }, [beritaList, searchTerm, selectedCityId, selectedActivity]);
 
   const handleOpenAddModal = () => {
+    if (readOnly) return;
     setFormTitle("");
     setFormDate("");
     setFormCityId("");
@@ -312,7 +315,7 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
   };
 
   const handleConfirmDelete = () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || readOnly) return;
     onDeleteBerita(deleteTarget.id);
     if (selectedBerita?.id === deleteTarget.id) {
       setSelectedBerita(null);
@@ -330,13 +333,15 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
           <p className="text-xs text-slate-500">Menampilkan berita duka, misi pedalaman, Sion Raya (SR), PDS, Komsel, dan aksi doa keliling.</p>
         </div>
         
-        <button
-          onClick={handleOpenAddModal}
-          className="flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-3 rounded-xl transition-all shadow-md shadow-indigo-600/10 self-start md:self-auto shrink-0 cursor-pointer"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Buat Berita Acara</span>
-        </button>
+        {!readOnly && (
+          <button
+            onClick={handleOpenAddModal}
+            className="flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-3 rounded-xl transition-all shadow-md shadow-indigo-600/10 self-start md:self-auto shrink-0 cursor-pointer"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Buat Berita Acara</span>
+          </button>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
@@ -516,16 +521,18 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
 
                   <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mt-2 pt-2 border-t border-slate-50">
                     <span>ID: {berita.id}</span>
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteTarget(berita);
-                      }}
-                      className="text-rose-500 hover:text-rose-700 font-bold transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                      <span>Hapus</span>
-                    </button>
+                    {!readOnly && (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteTarget(berita);
+                        }}
+                        className="text-rose-500 hover:text-rose-700 font-bold transition-all flex items-center gap-1 cursor-pointer"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        <span>Hapus</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -638,14 +645,16 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
                       <Heart className={`h-5 w-5 transition-transform ${detailLike.active ? "text-rose-600 fill-rose-600 scale-110" : ""}`} />
                       <span>{detailLike.count} Dukungan Doa</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeleteTarget(selectedBerita)}
-                      className="flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-100 transition-all"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span>Hapus</span>
-                    </button>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget(selectedBerita)}
+                        className="flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-100 transition-all"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span>Hapus</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -655,7 +664,7 @@ Buatkan laporan berita acara resmi Sion Ministry Indonesia yang rapi, padat, ber
       })()}
 
       {/* Create New Berita Acara Modal */}
-      {isModalOpen && (
+      {isModalOpen && !readOnly && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-xl overflow-hidden material-shadow-3 max-h-[90vh] flex flex-col animate-in fade-in zoom-in duration-200">
             

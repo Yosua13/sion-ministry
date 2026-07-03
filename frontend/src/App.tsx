@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { SionDatabase } from "./utils/db";
-import { City, Member, BeritaAcara, JurnalPA, DonationCampaign, DonationRecord, DiscipleshipLink, DiscipleshipModule, SyncState } from "./types";
+import { AuthSession, City, Member, BeritaAcara, JurnalPA, DonationCampaign, DonationRecord, DiscipleshipLink, DiscipleshipModule, SyncState } from "./types";
 import Sidebar, { SionLogo } from "./components/Sidebar";
+import AuthScreen from "./components/AuthScreen";
 import Dashboard from "./components/Dashboard";
 import Modules from "./components/Modules";
 import Members from "./components/Members";
@@ -11,7 +12,9 @@ import DonationsComponent from "./components/Donations";
 import Links from "./components/Links";
 import AiAssistant from "./components/AiAssistant";
 import Pekerjaan from "./components/Pekerjaan";
-import { Wifi, WifiOff, Bell, Menu, X, RefreshCw } from "lucide-react";
+import UserManagement from "./components/UserManagement";
+import RoleHome from "./components/RoleHome";
+import { Wifi, WifiOff, Bell, Menu, X, RefreshCw, LogOut } from "lucide-react";
 
 export default function App() {
   // Initialize Database on App load
@@ -30,6 +33,7 @@ export default function App() {
   const [donationRecords, setDonationRecords] = useState<DonationRecord[]>([]);
   const [links, setLinks] = useState<DiscipleshipLink[]>([]);
   const [syncState, setSyncState] = useState<SyncState>({ isOnline: true, lastSyncedAt: "", pendingChanges: [] });
+  const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   
   // Sync loading state
   const [isSyncing, setIsSyncing] = useState(false);
@@ -48,11 +52,28 @@ export default function App() {
     setSyncState(SionDatabase.getSyncState());
   };
 
+  const roleAllowedTabs: Record<AuthSession["user"]["role"], string[]> = {
+    admin: ["dashboard", "modules", "members", "berita", "jurnal_pa", "donasi", "links", "pekerjaan", "ai", "users"],
+    pekerja: ["home", "modules", "members", "berita", "jurnal_pa", "donasi", "links", "pekerjaan", "ai"],
+    jemaat: ["home", "modules", "berita", "jurnal_pa", "donasi", "links", "pekerjaan", "ai"],
+  };
+
+  const getDefaultTabForRole = (session: AuthSession | null) => {
+    if (!session) return "dashboard";
+    return session.user.role === "admin" ? "dashboard" : "home";
+  };
+
+  const canAccessTab = (tab: string) => {
+    if (!authSession) return false;
+    return roleAllowedTabs[authSession.user.role].includes(tab);
+  };
+
   // Helper to map pathname to tab name
   const getTabFromPath = (path: string): string => {
     switch (path) {
       case "/":
       case "/dashboard": return "dashboard";
+      case "/home": return "home";
       case "/modules": return "modules";
       case "/members": return "members";
       case "/berita": return "berita";
@@ -61,6 +82,7 @@ export default function App() {
       case "/links": return "links";
       case "/pekerjaan": return "pekerjaan";
       case "/ai": return "ai";
+      case "/users": return "users";
       default: return "dashboard";
     }
   };
@@ -69,6 +91,7 @@ export default function App() {
   const getPathFromTab = (tab: string): string => {
     switch (tab) {
       case "dashboard": return "/dashboard";
+      case "home": return "/home";
       case "modules": return "/modules";
       case "members": return "/members";
       case "berita": return "/berita";
@@ -77,11 +100,15 @@ export default function App() {
       case "links": return "/links";
       case "pekerjaan": return "/pekerjaan";
       case "ai": return "/ai";
+      case "users": return "/users";
       default: return "/dashboard";
     }
   };
 
   const changeTab = (tab: string) => {
+    if (!canAccessTab(tab)) {
+      tab = getDefaultTabForRole(authSession);
+    }
     setActiveTab(tab);
     const newPath = getPathFromTab(tab);
     if (window.location.pathname !== newPath) {
@@ -95,9 +122,20 @@ export default function App() {
   };
 
   useEffect(() => {
+    SionDatabase.init();
+    setAuthSession(SionDatabase.getAuthSession());
+    refreshData();
+  }, []);
+
+  useEffect(() => {
+    if (!authSession) return;
     // Detect initial tab from path
     const initialTab = getTabFromPath(window.location.pathname);
-    setActiveTab(initialTab);
+    const resolvedTab = roleAllowedTabs[authSession.user.role].includes(initialTab) ? initialTab : getDefaultTabForRole(authSession);
+    setActiveTab(resolvedTab);
+    if (getPathFromTab(resolvedTab) !== window.location.pathname) {
+      window.history.replaceState(null, "", getPathFromTab(resolvedTab));
+    }
 
     refreshData();
     // Fetch fresh data from backend if online on startup
@@ -106,11 +144,27 @@ export default function App() {
     });
 
     const handlePopState = () => {
-      setActiveTab(getTabFromPath(window.location.pathname));
+      const tab = getTabFromPath(window.location.pathname);
+      setActiveTab(roleAllowedTabs[authSession.user.role].includes(tab) ? tab : getDefaultTabForRole(authSession));
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
+  }, [authSession]);
+
+  const handleAuthenticated = (session: AuthSession) => {
+    setAuthSession(session);
+    const defaultTab = getDefaultTabForRole(session);
+    setActiveTab(defaultTab);
+    window.history.pushState(null, "", getPathFromTab(defaultTab));
+    refreshData();
+  };
+
+  const handleLogout = () => {
+    SionDatabase.logout();
+    setAuthSession(null);
+    setActiveTab("dashboard");
+    window.history.pushState(null, "", "/dashboard");
+  };
 
   // Listen to browser network changes to automatically sync or flag status
   useEffect(() => {
@@ -234,7 +288,33 @@ export default function App() {
 
   // Helper to switch active panel views
   const renderActiveView = () => {
+    if (!canAccessTab(activeTab)) {
+      return (
+        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6 text-amber-900">
+          <h2 className="text-lg font-bold">Akses fitur dibatasi</h2>
+          <p className="mt-2 text-sm leading-6">
+            Role akun ini belum memiliki akses ke halaman tersebut. Hubungi admin jika tanggung jawab pelayanan Anda berubah.
+          </p>
+        </div>
+      );
+    }
+
     switch (activeTab) {
+      case "home":
+        return (
+          <RoleHome
+            currentUser={authSession!.user}
+            members={members}
+            berita={berita}
+            jurnalPa={jurnalPa}
+            campaigns={campaigns}
+            modules={modules}
+            onNavigateToTab={(tab) => {
+              changeTab(tab);
+              setMobileMenuOpen(false);
+            }}
+          />
+        );
       case "dashboard":
         return (
           <Dashboard
@@ -277,6 +357,7 @@ export default function App() {
             onAddBerita={handleAddBerita}
             onDeleteBerita={handleDeleteBerita}
             isOnline={syncState.isOnline}
+            readOnly={authSession?.user.role === "jemaat"}
           />
         );
       case "jurnal_pa":
@@ -288,6 +369,7 @@ export default function App() {
             onAddJurnal={handleAddJurnalPA}
             onDeleteJurnal={handleDeleteJurnalPA}
             isOnline={syncState.isOnline}
+            readOnly={authSession?.user.role === "jemaat"}
           />
         );
       case "donasi":
@@ -297,6 +379,7 @@ export default function App() {
             donationRecords={donationRecords}
             onAddDonationRecord={handleAddDonationRecord}
             onAddCampaign={handleAddCampaign}
+            readOnly={authSession?.user.role === "jemaat"}
           />
         );
       case "links":
@@ -306,10 +389,13 @@ export default function App() {
             onAddLink={handleAddLink}
             onUpdateLink={handleUpdateLink}
             onDeleteLink={handleDeleteLink}
+            readOnly={authSession?.user.role === "jemaat"}
           />
         );
       case "ai":
         return <AiAssistant />;
+      case "users":
+        return <UserManagement />;
       default:
         return <div className="text-center py-10 font-medium">Halaman Sedang Dipersiapkan</div>;
     }
@@ -318,6 +404,7 @@ export default function App() {
   const getPageTitle = () => {
     switch (activeTab) {
       case "dashboard": return "Dashboard Utama";
+      case "home": return authSession?.user.role === "pekerja" ? "Beranda Pekerja" : "Beranda Jemaat";
       case "modules": return "Kurikulum Pelatihan";
       case "members": return "Daftar Jemaat";
       case "berita": return "Laporan Berita Acara";
@@ -325,12 +412,17 @@ export default function App() {
       case "donasi": return "Portal Donasi Sion Care";
       case "links": return "Tautan & Dokumen";
       case "ai": return "Asisten Pemuridan AI";
+      case "users": return "Manajemen User";
       default: return "Sion Academy";
     }
   };
 
+  if (!authSession) {
+    return <AuthScreen cities={cities} onAuthenticated={handleAuthenticated} />;
+  }
+
   if (activeTab === "pekerjaan") {
-    return <Pekerjaan onBackToMain={() => changeTab("dashboard")} />;
+    return <Pekerjaan onBackToMain={() => changeTab(getDefaultTabForRole(authSession))} />;
   }
 
   return (
@@ -347,6 +439,7 @@ export default function App() {
         onToggleOnline={handleToggleOnline}
         onSync={handleSyncWithCloud}
         isSyncing={isSyncing}
+        currentUser={authSession.user}
       />
 
       {/* Main Panel Area */}
@@ -401,12 +494,19 @@ export default function App() {
             {/* Active User account chip */}
             <div className="flex items-center space-x-2 border-l border-slate-100 pl-4">
               <div className="h-8 w-8 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 text-xs font-bold font-mono">
-                P
+                {authSession.user.name.slice(0, 1).toUpperCase()}
               </div>
               <div className="hidden lg:block text-left">
-                <span className="text-xs font-bold text-slate-700 block leading-tight">Yosua Reynaldi</span>
-                <span className="text-[10px] text-slate-400 font-medium block">Pekerja</span>
+                <span className="text-xs font-bold text-slate-700 block leading-tight">{authSession.user.name}</span>
+                <span className="text-[10px] text-slate-400 font-medium block capitalize">{authSession.user.role}</span>
               </div>
+              <button
+                onClick={handleLogout}
+                className="p-2 rounded-xl text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all"
+                title="Keluar"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
             </div>
           </div>
         </header>

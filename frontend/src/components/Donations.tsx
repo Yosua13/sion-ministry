@@ -24,6 +24,7 @@ interface DonationsProps {
   donationRecords: DonationRecord[];
   onAddDonationRecord: (record: Omit<DonationRecord, "id" | "date">) => void;
   onAddCampaign: (campaign: Omit<DonationCampaign, "id">) => void;
+  readOnly?: boolean;
 }
 
 // Preset banners for donation campaigns
@@ -38,7 +39,8 @@ export default function DonationsComponent({
   campaigns,
   donationRecords,
   onAddDonationRecord,
-  onAddCampaign
+  onAddCampaign,
+  readOnly = false
 }: DonationsProps) {
   const [campaignSearchTerm, setCampaignSearchTerm] = useState("");
   const [selectedCampaignCategory, setSelectedCampaignCategory] = useState<string>("All");
@@ -125,6 +127,7 @@ export default function DonationsComponent({
   };
 
   const handleOpenDonateModal = (campaign: DonationCampaign) => {
+    if (readOnly) return;
     setSelectedCampaign(campaign);
     setDonorName("");
     setDonationAmount("");
@@ -179,6 +182,7 @@ export default function DonationsComponent({
   };
 
   const handleOpenNewCampaignModal = () => {
+    if (readOnly) return;
     setNewTitle("");
     setNewDescription("");
     setNewTarget("");
@@ -256,13 +260,15 @@ export default function DonationsComponent({
           </p>
         </div>
         
-        <button
-          onClick={handleOpenNewCampaignModal}
-          className="flex items-center justify-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-5 py-3 rounded-xl transition-all shadow-md self-start md:self-auto cursor-pointer"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Buat Penggalangan Dana</span>
-        </button>
+        {!readOnly && (
+          <button
+            onClick={handleOpenNewCampaignModal}
+            className="flex items-center justify-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-5 py-3 rounded-xl transition-all shadow-md self-start md:self-auto cursor-pointer"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Buat Penggalangan Dana</span>
+          </button>
+        )}
       </div>
 
       {/* Grid of Active Campaigns */}
@@ -386,16 +392,18 @@ export default function DonationsComponent({
                   )}
 
                   {/* Action row */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleOpenDonateModal(campaign);
-                    }}
-                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-indigo-600/10 flex items-center justify-center space-x-2 mt-4 cursor-pointer"
-                  >
-                    <Heart className="h-4 w-4 fill-white" />
-                    <span>Donasi Sekarang</span>
-                  </button>
+                  {!readOnly && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenDonateModal(campaign);
+                      }}
+                      className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-indigo-600/10 flex items-center justify-center space-x-2 mt-4 cursor-pointer"
+                    >
+                      <Heart className="h-4 w-4 fill-white" />
+                      <span>Donasi Sekarang</span>
+                    </button>
+                  )}
                 </div>
 
               </div>
@@ -585,17 +593,19 @@ export default function DonationsComponent({
                     )}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleOpenDonateModal(detailCampaign);
-                      setDetailCampaign(null);
-                    }}
-                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-indigo-600/10 flex items-center justify-center space-x-2"
-                  >
-                    <Heart className="h-4 w-4 fill-white" />
-                    <span>Donasi Sekarang</span>
-                  </button>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleOpenDonateModal(detailCampaign);
+                        setDetailCampaign(null);
+                      }}
+                      className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-indigo-600/10 flex items-center justify-center space-x-2"
+                    >
+                      <Heart className="h-4 w-4 fill-white" />
+                      <span>Donasi Sekarang</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -604,7 +614,7 @@ export default function DonationsComponent({
       })()}
 
       {/* Donation Action Modal */}
-      {selectedCampaign && (
+      {selectedCampaign && !readOnly && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-2xl overflow-hidden material-shadow-3 max-h-[90vh] flex flex-col animate-in fade-in zoom-in duration-200">
             
@@ -799,7 +809,7 @@ export default function DonationsComponent({
       )}
 
       {/* New Campaign Modal */}
-      {isNewCampaignModalOpen && (
+      {isNewCampaignModalOpen && !readOnly && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden material-shadow-3 animate-in fade-in zoom-in duration-200">
             

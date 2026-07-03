@@ -24,6 +24,7 @@ interface JurnalPAProps {
   onAddJurnal: (jurnal: Omit<JurnalPA, "id" | "synced" | "action">) => void;
   onDeleteJurnal: (id: string) => void;
   isOnline: boolean;
+  readOnly?: boolean;
 }
 
 // Preset documentation images for PA
@@ -41,7 +42,8 @@ export default function JurnalPAComponent({
   members,
   onAddJurnal,
   onDeleteJurnal,
-  isOnline
+  isOnline,
+  readOnly = false
 }: JurnalPAProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCityId, setSelectedCityId] = useState<string>("All");
@@ -107,6 +109,7 @@ export default function JurnalPAComponent({
   }, [members, jurnalList]);
 
   const handleOpenAddModal = () => {
+    if (readOnly) return;
     setFormTheme("");
     setFormScripture("");
     setFormFocus("");
@@ -196,7 +199,7 @@ export default function JurnalPAComponent({
   };
 
   const handleConfirmDelete = () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || readOnly) return;
     onDeleteJurnal(deleteTarget.id);
     if (selectedJurnal?.id === deleteTarget.id) {
       setSelectedJurnal(null);
@@ -214,13 +217,15 @@ export default function JurnalPAComponent({
           <p className="text-xs text-slate-500">Mencatat, meninjau, dan melacak pertumbuhan rohani mentee/murid Kristus per kota jangkauan.</p>
         </div>
         
-        <button
-          onClick={handleOpenAddModal}
-          className="flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-3 rounded-xl transition-all shadow-md shadow-indigo-600/10 self-start md:self-auto shrink-0 cursor-pointer"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Tulis Jurnal PA</span>
-        </button>
+        {!readOnly && (
+          <button
+            onClick={handleOpenAddModal}
+            className="flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-3 rounded-xl transition-all shadow-md shadow-indigo-600/10 self-start md:self-auto shrink-0 cursor-pointer"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Tulis Jurnal PA</span>
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -321,16 +326,18 @@ export default function JurnalPAComponent({
                     Sion {jurnal.cityName}
                   </span>
                   
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteTarget(jurnal);
-                    }}
-                    className="text-rose-500 hover:text-rose-700 font-bold transition-all flex items-center gap-1 cursor-pointer"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                    <span>Hapus</span>
-                  </button>
+                  {!readOnly && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteTarget(jurnal);
+                      }}
+                      className="text-rose-500 hover:text-rose-700 font-bold transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span>Hapus</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -402,14 +409,16 @@ export default function JurnalPAComponent({
 
                 <div className="flex items-center justify-between pt-4 border-t border-slate-100">
                   <span className="text-[10px] font-mono text-slate-400">ID: {selectedJurnal.id}</span>
-                  <button
-                    type="button"
-                    onClick={() => setDeleteTarget(selectedJurnal)}
-                    className="flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-100 transition-all"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    <span>Hapus Jurnal</span>
-                  </button>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget(selectedJurnal)}
+                      className="flex items-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-100 transition-all"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>Hapus Jurnal</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -418,7 +427,7 @@ export default function JurnalPAComponent({
       )}
 
       {/* New Journal PA Modal */}
-      {isModalOpen && (
+      {isModalOpen && !readOnly && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden material-shadow-3 max-h-[90vh] flex flex-col animate-in fade-in zoom-in duration-200">
             

@@ -20,13 +20,15 @@ interface LinksProps {
   onAddLink: (link: Omit<DiscipleshipLink, "id">) => void;
   onUpdateLink: (link: DiscipleshipLink) => void;
   onDeleteLink: (id: string) => void;
+  readOnly?: boolean;
 }
 
 export default function Links({
   links,
   onAddLink,
   onUpdateLink,
-  onDeleteLink
+  onDeleteLink,
+  readOnly = false
 }: LinksProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
@@ -62,6 +64,7 @@ export default function Links({
 
   // Handle open modal for adding
   const handleOpenAddModal = () => {
+    if (readOnly) return;
     setEditingLink(null);
     setFormTitle("");
     setFormUrl("");
@@ -73,6 +76,7 @@ export default function Links({
 
   // Handle open modal for editing
   const handleOpenEditModal = (link: DiscipleshipLink) => {
+    if (readOnly) return;
     setEditingLink(link);
     setFormTitle(link.title);
     setFormUrl(link.url);
@@ -126,7 +130,7 @@ export default function Links({
   };
 
   const handleConfirmDelete = () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || readOnly) return;
     onDeleteLink(deleteTarget.id);
     setDeleteTarget(null);
   };
@@ -156,13 +160,15 @@ export default function Links({
             <p className="text-xs text-slate-400 mt-1">Akses cepat berkas, formulir, video, dan panduan praktis pelayanan</p>
           </div>
 
-          <button
-            onClick={handleOpenAddModal}
-            className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-indigo-600/15"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Tambah Tautan</span>
-          </button>
+          {!readOnly && (
+            <button
+              onClick={handleOpenAddModal}
+              className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-indigo-600/15"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Tambah Tautan</span>
+            </button>
+          )}
         </div>
 
         {/* Filters */}
@@ -254,22 +260,24 @@ export default function Links({
                   <span className="truncate">{link.url}</span>
                 </a>
 
-                <div className="flex items-center space-x-1">
-                  <button
-                    onClick={() => handleOpenEditModal(link)}
-                    className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-lg transition-all"
-                    title="Ubah"
-                  >
-                    <Edit className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => setDeleteTarget(link)}
-                    className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-500 rounded-lg transition-all"
-                    title="Hapus"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+                {!readOnly && (
+                  <div className="flex items-center space-x-1">
+                    <button
+                      onClick={() => handleOpenEditModal(link)}
+                      className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-lg transition-all"
+                      title="Ubah"
+                    >
+                      <Edit className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setDeleteTarget(link)}
+                      className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-500 rounded-lg transition-all"
+                      title="Hapus"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -277,7 +285,7 @@ export default function Links({
       )}
 
       {/* Add / Edit Link Dialog */}
-      {isModalOpen && (
+      {isModalOpen && !readOnly && (
         <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden border border-slate-100 material-shadow-3 animate-in fade-in zoom-in-95 duration-150">
             {/* Dialog Header */}

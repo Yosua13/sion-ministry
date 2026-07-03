@@ -11,9 +11,12 @@ import {
   Wifi, 
   WifiOff, 
   RefreshCw,
-  Briefcase
+  Briefcase,
+  ShieldCheck,
+  Home
 } from "lucide-react";
 import { SyncState } from "../types";
+import { AuthUser } from "../types";
 
 // Custom Sion Ministry Image Logo
 export function SionLogo({ className = "h-8 w-8" }: { className?: string }) {
@@ -33,6 +36,7 @@ interface SidebarProps {
   onToggleOnline: () => void;
   onSync: () => void;
   isSyncing: boolean;
+  currentUser: AuthUser;
 }
 
 export default function Sidebar({
@@ -41,19 +45,23 @@ export default function Sidebar({
   syncState,
   onToggleOnline,
   onSync,
-  isSyncing
+  isSyncing,
+  currentUser
 }: SidebarProps) {
   const menuItems = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { id: "modules", label: "Modul Belajar", icon: BookOpen },
-    { id: "members", label: "Data Jemaat", icon: Users },
-    { id: "berita", label: "Berita Acara", icon: Newspaper },
-    { id: "jurnal_pa", label: "Jurnal PA", icon: BookMarked },
-    { id: "donasi", label: "Donasi", icon: HeartHandshake },
-    { id: "links", label: "Tautan Sumber", icon: Link2 },
-    { id: "pekerjaan", label: "Pekerjaan", icon: Briefcase },
-    { id: "ai", label: "Sion AI Assistant", icon: Sparkles },
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin"] },
+    { id: "home", label: currentUser.role === "pekerja" ? "Beranda Pekerja" : "Beranda Jemaat", icon: Home, roles: ["pekerja", "jemaat"] },
+    { id: "modules", label: "Modul Belajar", icon: BookOpen, roles: ["admin", "pekerja", "jemaat"] },
+    { id: "members", label: "Data Jemaat", icon: Users, roles: ["admin", "pekerja"] },
+    { id: "berita", label: "Berita Acara", icon: Newspaper, roles: ["admin", "pekerja", "jemaat"] },
+    { id: "jurnal_pa", label: "Jurnal PA", icon: BookMarked, roles: ["admin", "pekerja", "jemaat"] },
+    { id: "donasi", label: "Donasi", icon: HeartHandshake, roles: ["admin", "pekerja", "jemaat"] },
+    { id: "links", label: "Tautan Sumber", icon: Link2, roles: ["admin", "pekerja", "jemaat"] },
+    { id: "pekerjaan", label: "Pekerjaan", icon: Briefcase, roles: ["admin", "pekerja", "jemaat"] },
+    { id: "ai", label: "Sion AI Assistant", icon: Sparkles, roles: ["admin", "pekerja", "jemaat"] },
+    { id: "users", label: "Manajemen User", icon: ShieldCheck, roles: ["admin"] },
   ];
+  const visibleMenuItems = menuItems.filter((item) => item.roles.includes(currentUser.role));
 
   return (
     <>
@@ -72,7 +80,7 @@ export default function Sidebar({
 
         {/* Navigation List */}
         <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
-          {menuItems.map((item) => {
+          {visibleMenuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
@@ -163,7 +171,7 @@ export default function Sidebar({
 
       {/* Sticky Bottom Nav Bar for Mobile Devices */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 z-50 px-2 py-1 flex justify-around items-center">
-        {menuItems.map((item) => {
+        {visibleMenuItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
           return (
