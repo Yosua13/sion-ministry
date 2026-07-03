@@ -48,54 +48,86 @@ export default function Sidebar({
   isSyncing,
   currentUser
 }: SidebarProps) {
-  const menuItems = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin"] },
-    { id: "home", label: currentUser.role === "pekerja" ? "Beranda Pekerja" : "Beranda Jemaat", icon: Home, roles: ["pekerja", "jemaat"] },
-    { id: "modules", label: "Modul Belajar", icon: BookOpen, roles: ["admin", "pekerja", "jemaat"] },
-    { id: "members", label: "Data Jemaat", icon: Users, roles: ["admin", "pekerja"] },
-    { id: "berita", label: "Berita Acara", icon: Newspaper, roles: ["admin", "pekerja", "jemaat"] },
-    { id: "jurnal_pa", label: "Jurnal PA", icon: BookMarked, roles: ["admin", "pekerja", "jemaat"] },
-    { id: "donasi", label: "Donasi", icon: HeartHandshake, roles: ["admin", "pekerja", "jemaat"] },
-    { id: "links", label: "Tautan Sumber", icon: Link2, roles: ["admin", "pekerja", "jemaat"] },
-    { id: "pekerjaan", label: "Pekerjaan", icon: Briefcase, roles: ["admin", "pekerja", "jemaat"] },
-    { id: "ai", label: "Sion AI Assistant", icon: Sparkles, roles: ["admin", "pekerja", "jemaat"] },
-    { id: "users", label: "Manajemen User", icon: ShieldCheck, roles: ["admin"] },
+  // Classified menu items based on functions & roles
+  const menuGroups = [
+    {
+      title: "Utama",
+      items: [
+        { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin"] },
+        { id: "home", label: currentUser.role === "pekerja" ? "Beranda Pekerja" : "Beranda Jemaat", icon: Home, roles: ["pekerja", "jemaat"] },
+      ]
+    },
+    {
+      title: "Pelayanan & Pemuridan",
+      items: [
+        { id: "members", label: "Data Jemaat", icon: Users, roles: ["admin", "pekerja"] },
+        { id: "jurnal_pa", label: "Jurnal PA", icon: BookMarked, roles: ["admin", "pekerja", "jemaat"] },
+        { id: "berita", label: "Berita Acara", icon: Newspaper, roles: ["admin", "pekerja", "jemaat"] },
+        { id: "modules", label: "Modul Belajar", icon: BookOpen, roles: ["admin", "pekerja", "jemaat"] },
+      ]
+    },
+    {
+      title: "Sumber Daya",
+      items: [
+        { id: "donasi", label: "Donasi Care", icon: HeartHandshake, roles: ["admin", "pekerja", "jemaat"] },
+        { id: "pekerjaan", label: "Pekerjaan Misi", icon: Briefcase, roles: ["admin", "pekerja", "jemaat"] },
+        { id: "links", label: "Tautan Sumber", icon: Link2, roles: ["admin", "pekerja", "jemaat"] },
+      ]
+    },
+    {
+      title: "Sistem & Tools",
+      items: [
+        { id: "ai", label: "Sion AI Assistant", icon: Sparkles, roles: ["admin", "pekerja", "jemaat"] },
+        { id: "users", label: "Manajemen User", icon: ShieldCheck, roles: ["admin"] },
+      ]
+    }
   ];
-  const visibleMenuItems = menuItems.filter((item) => item.roles.includes(currentUser.role));
+
+  // Flat menu items list for mobile view and quick searches
+  const flatMenuItems = menuGroups.flatMap(g => g.items).filter(item => item.roles.includes(currentUser.role));
 
   return (
     <>
       {/* Sidebar for Desktop */}
       <aside className="hidden md:flex flex-col w-64 bg-slate-900 text-slate-100 h-screen sticky top-0 border-r border-slate-800 shrink-0">
         {/* Brand Header */}
-        <div className="p-6 border-b border-slate-800 flex items-center space-x-3 bg-gradient-to-r from-indigo-950 to-slate-900">
+        <div className="p-5 border-b border-slate-800 flex items-center space-x-3 bg-gradient-to-r from-indigo-950 to-slate-900">
           <div className="p-2 bg-slate-800/80 rounded-xl border border-slate-700/55 shadow-inner">
             <SionLogo className="h-9 w-9" />
           </div>
           <div>
-            <h1 className="font-display font-bold text-base tracking-tight leading-none text-white">SION MINISTRY</h1>
+            <h1 className="font-display font-bold text-sm tracking-tight leading-none text-white">SION MINISTRY</h1>
             <p className="text-[9px] text-slate-400 font-mono tracking-widest mt-1.5 uppercase">Amanat Agung</p>
           </div>
         </div>
 
-        {/* Navigation List */}
-        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
-          {visibleMenuItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
+        {/* Navigation List grouped by functionality */}
+        <nav className="flex-1 p-4 space-y-4 overflow-y-auto scrollbar-thin">
+          {menuGroups.map((group) => {
+            const groupItems = group.items.filter((item) => item.roles.includes(currentUser.role));
+            if (groupItems.length === 0) return null;
             return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                  isActive
-                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/10"
-                    : "text-slate-300 hover:bg-slate-800/60 hover:text-white"
-                }`}
-              >
-                <Icon className={`h-4.5 w-4.5 ${isActive ? "text-white" : "text-slate-400"}`} />
-                <span>{item.label}</span>
-              </button>
+              <div key={group.title} className="space-y-1">
+                <h3 className="px-4 text-[9px] uppercase tracking-widest font-bold text-slate-500 font-mono mb-1">{group.title}</h3>
+                {groupItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setActiveTab(item.id)}
+                      className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-xl transition-all text-left group ${
+                        isActive
+                          ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/10"
+                          : "text-slate-300 hover:bg-slate-800/60 hover:text-white"
+                      }`}
+                    >
+                      <Icon className={`h-4.5 w-4.5 shrink-0 transition-colors ${isActive ? "text-white" : "text-slate-400 group-hover:text-white"}`} />
+                      <span className="text-xs font-bold block truncate">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             );
           })}
         </nav>
@@ -170,22 +202,22 @@ export default function Sidebar({
       </aside>
 
       {/* Sticky Bottom Nav Bar for Mobile Devices */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 z-50 px-2 py-1 flex justify-around items-center">
-        {visibleMenuItems.map((item) => {
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 z-50 px-3 py-1 flex items-center space-x-1 overflow-x-auto scrollbar-none">
+        {flatMenuItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
           return (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-xl transition-all ${
+              className={`flex-shrink-0 flex flex-col items-center justify-center py-1.5 px-4 rounded-xl transition-all ${
                 isActive 
                   ? "text-indigo-400 bg-slate-800/50" 
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
               <Icon className="h-5 w-5" />
-              <span className="text-[9px] mt-0.5 font-medium tracking-tight truncate max-w-[64px]">
+              <span className="text-[9px] mt-0.5 font-bold tracking-tight">
                 {item.label}
               </span>
             </button>
