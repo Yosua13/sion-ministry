@@ -70,7 +70,7 @@ export default function Sidebar({
       title: "Sumber Daya",
       items: [
         { id: "donasi", label: "Donasi Care", icon: HeartHandshake, roles: ["admin", "pekerja", "jemaat"] },
-        { id: "pekerjaan", label: "Pekerjaan Misi", icon: Briefcase, roles: ["admin", "pekerja", "jemaat"] },
+        { id: "pekerjaan", label: "Sion Careers", icon: Briefcase, roles: ["admin", "pekerja", "jemaat"] },
         { id: "links", label: "Tautan Sumber", icon: Link2, roles: ["admin", "pekerja", "jemaat"] },
       ]
     },
