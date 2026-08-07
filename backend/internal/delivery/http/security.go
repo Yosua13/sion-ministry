@@ -1,0 +1,89 @@
+package http
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/gofiber/fiber/v2"
+)
+
+type APIError struct {
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	RequestID string `json:"requestId"`
+}
+
+func RequestID() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		requestID := c.Get("X-Request-ID")
+		if requestID == "" || len(requestID) > 128 {
+			bytes := make([]byte, 16)
+			if _, err := rand.Read(bytes); err == nil {
+				requestID = hex.EncodeToString(bytes)
+			} else {
+				requestID = "unavailable"
+			}
+		}
+		c.Locals("request_id", requestID)
+		c.Set("X-Request-ID", requestID)
+		return c.Next()
+	}
+}
+
+func SecurityHeaders(production bool) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set("X-Content-Type-Options", "nosniff")
+		c.Set("X-Frame-Options", "DENY")
+		c.Set("Referrer-Policy", "no-referrer")
+		c.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		if strings.HasPrefix(c.Path(), "/api") {
+			c.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		} else {
+			c.Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'")
+		}
+		if production {
+			c.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+		return c.Next()
+	}
+}
+
+func ErrorHandler(c *fiber.Ctx, err error) error {
+	status := fiber.StatusInternalServerError
+	code := "internal_error"
+	message := "Terjadi kesalahan pada server."
+	if fiberError, ok := err.(*fiber.Error); ok {
+		status = fiberError.Code
+		message = fiberError.Message
+		code = "request_error"
+	}
+	return c.Status(status).JSON(fiber.Map{"error": APIError{Code: code, Message: message, RequestID: requestID(c)}})
+}
+
+func RateLimitError(c *fiber.Ctx) error {
+	return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{"error": APIError{Code: "rate_limited", Message: "Terlalu banyak permintaan. Silakan coba lagi nanti.", RequestID: requestID(c)}})
+}
+
+func WriteAPIError(c *fiber.Ctx, status int, code string, message string) error {
+	return c.Status(status).JSON(fiber.Map{"error": APIError{Code: code, Message: message, RequestID: requestID(c)}})
+}
+
+func requestID(c *fiber.Ctx) string {
+	value, _ := c.Locals("request_id").(string)
+	return value
+}
+
+func (h *Handlers) ServeUpload(c *fiber.Ctx) error {
+	filename := c.Params("filename")
+	if filename == "" || filepath.Base(filename) != filename || strings.Contains(filename, "..") {
+		return c.SendStatus(fiber.StatusNotFound)
+	}
+	uploadDir := strings.TrimSpace(os.Getenv("UPLOAD_DIR"))
+	if uploadDir == "" {
+		uploadDir = "uploads"
+	}
+	return c.SendFile(filepath.Join(uploadDir, filename))
+}
