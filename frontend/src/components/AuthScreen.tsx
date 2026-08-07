@@ -23,7 +23,6 @@ type FieldErrors = Partial<Record<keyof AuthForm, string>>;
 
 const roleOptions: Array<{ role: AuthRole; label: string; description: string }> = [
   { role: "pekerja", label: "Pekerja", description: "Mengelola pelayanan, jurnal, dan laporan lapangan." },
-  { role: "admin", label: "Admin", description: "Mengatur data utama, akses user, dan sinkronisasi." },
   { role: "jemaat", label: "Jemaat", description: "Mengikuti modul, donasi, dan informasi pelayanan." },
 ];
 

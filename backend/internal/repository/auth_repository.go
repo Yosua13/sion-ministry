@@ -15,6 +15,7 @@ type AuthRepository interface {
 	CreateSession(session *models.AuthSession) error
 	GetSession(token string) (*models.AuthSession, error)
 	DeleteSession(token string) error
+	DeleteSessionsByUser(userID string) error
 }
 
 type authRepository struct {
@@ -69,4 +70,8 @@ func (r *authRepository) GetSession(token string) (*models.AuthSession, error) {
 
 func (r *authRepository) DeleteSession(token string) error {
 	return r.db.Delete(&models.AuthSession{}, "token = ?", token).Error
+}
+
+func (r *authRepository) DeleteSessionsByUser(userID string) error {
+	return r.db.Delete(&models.AuthSession{}, "user_id = ?", userID).Error
 }

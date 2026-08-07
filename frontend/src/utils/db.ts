@@ -13,41 +13,16 @@ const STORAGE_KEYS = {
   SYNC_STATE: "sion_sync_state",
   JOBS: "sion_jobs",
   APPLICATIONS: "sion_applications",
-  AUTH_USERS: "sion_auth_users",
   AUTH_SESSION: "sion_auth_session",
 };
 
-type StoredAuthUser = AuthUser & { passwordHash: string };
-
-const DEFAULT_ADMIN_EMAIL = "admin@sionministry.local";
-const DEFAULT_ADMIN_PASSWORD = "AdminSion123";
-
 export class SionDatabase {
-  private static hashPassword(password: string): string {
-    return btoa(unescape(encodeURIComponent(`sion:${password}`)));
-  }
-
-  private static createSession(user: AuthUser): AuthSession {
-    return {
-      token: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      user,
-      expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString(),
-    };
-  }
-
-  private static getStoredAuthUsers(): StoredAuthUser[] {
-    const users = localStorage.getItem(STORAGE_KEYS.AUTH_USERS);
-    return users ? JSON.parse(users) : [];
-  }
-
-  private static saveStoredAuthUsers(users: StoredAuthUser[]) {
-    localStorage.setItem(STORAGE_KEYS.AUTH_USERS, JSON.stringify(users));
-  }
-
   private static async readApiError(response: Response): Promise<string> {
     try {
       const payload = await response.json();
-      return payload?.error || payload?.message || "";
+      if (typeof payload?.error === "string") return payload.error;
+      if (typeof payload?.error?.message === "string") return payload.error.message;
+      return typeof payload?.message === "string" ? payload.message : "";
     } catch {
       return "";
     }
@@ -124,19 +99,9 @@ export class SionDatabase {
     if (!localStorage.getItem(STORAGE_KEYS.APPLICATIONS)) {
       localStorage.setItem(STORAGE_KEYS.APPLICATIONS, JSON.stringify([]));
     }
-    if (!localStorage.getItem(STORAGE_KEYS.AUTH_USERS)) {
-      const defaultAdmin: StoredAuthUser = {
-        id: "usr-admin-default",
-        name: "Admin Sion",
-        email: DEFAULT_ADMIN_EMAIL,
-        role: "admin",
-        status: "active",
-        createdAt: new Date().toISOString(),
-        approvedAt: new Date().toISOString(),
-        passwordHash: this.hashPassword(DEFAULT_ADMIN_PASSWORD),
-      };
-      localStorage.setItem(STORAGE_KEYS.AUTH_USERS, JSON.stringify([defaultAdmin]));
-    }
+    // Remove credentials created by vulnerable prototype versions. Authentication is
+    // server-authoritative; local storage may only contain a server-issued session.
+    localStorage.removeItem("sion_auth_users");
     if (!localStorage.getItem(STORAGE_KEYS.SYNC_STATE)) {
       const defaultSync: SyncState = {
         isOnline: navigator.onLine,
@@ -148,13 +113,6 @@ export class SionDatabase {
   }
 
   // --- Auth Helpers ---
-  static getDefaultAdminCredentials() {
-    return {
-      email: DEFAULT_ADMIN_EMAIL,
-      password: DEFAULT_ADMIN_PASSWORD,
-    };
-  }
-
   static getAuthSession(): AuthSession | null {
     this.init();
     const session = localStorage.getItem(STORAGE_KEYS.AUTH_SESSION);
@@ -174,146 +132,75 @@ export class SionDatabase {
 
   static async login(email: string, password: string): Promise<AuthSession> {
     this.init();
-
+    let response: Response;
     try {
-      const response = await fetch("/api/auth/login", {
+      response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-
-      if (response.ok) {
-        const session = await response.json() as AuthSession;
-        localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, JSON.stringify(session));
-        return session;
-      }
-      const apiError = await this.readApiError(response);
-      if (apiError) {
-        throw new Error(this.toUserFriendlyAuthError(apiError));
-      }
-    } catch (err: any) {
-      if (err?.name !== "TypeError") {
-        throw err;
-      }
-      // Offline/local fallback keeps the app usable during ministry field work.
+    } catch {
+      throw new Error("Server autentikasi tidak dapat dihubungi. Koneksi diperlukan untuk masuk.");
     }
-
-    const users = this.getStoredAuthUsers();
-    const user = users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase());
-    if (!user || user.passwordHash !== this.hashPassword(password)) {
-      throw new Error("Email atau password belum sesuai.");
+    if (!response.ok) {
+      throw new Error(this.toUserFriendlyAuthError(await this.readApiError(response)));
     }
-    if (user.status === "pending") {
-      throw new Error("Akun ini belum diverifikasi oleh admin. Silakan tunggu persetujuan admin sebelum masuk.");
-    }
-    if (user.status === "disabled") {
-      throw new Error("Akun ini sedang dinonaktifkan. Silakan hubungi admin pelayanan.");
-    }
-    if (user.status !== "active") {
-      throw new Error("Status akun belum valid. Silakan hubungi admin pelayanan.");
-    }
-
-    const { passwordHash: _passwordHash, ...safeUser } = user;
-    const session = this.createSession(safeUser);
+    const session = await response.json() as AuthSession;
     localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, JSON.stringify(session));
     return session;
   }
 
   static async register(input: { name: string; email: string; password: string; role: AuthRole; cityId?: string; cityName?: string }): Promise<AuthUser> {
     this.init();
-
+    let response: Response;
     try {
-      const response = await fetch("/api/auth/register", {
+      response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-
-      if (response.ok) {
-        return await response.json() as AuthUser;
-      }
     } catch {
-      // Continue with local registration when the backend is not reachable.
+      throw new Error("Server autentikasi tidak dapat dihubungi. Koneksi diperlukan untuk mendaftar.");
     }
-
-    const users = this.getStoredAuthUsers();
-    const normalizedEmail = input.email.trim().toLowerCase();
-    if (users.some((u) => u.email.toLowerCase() === normalizedEmail)) {
-      throw new Error("Email ini sudah terdaftar.");
+    if (!response.ok) {
+      throw new Error(await this.readApiError(response) || "Pendaftaran gagal. Silakan coba lagi.");
     }
-
-    const newUser: StoredAuthUser = {
-      id: `usr-${Date.now()}`,
-      name: input.name.trim(),
-      email: normalizedEmail,
-      role: input.role,
-      status: "pending",
-      cityId: input.cityId,
-      cityName: input.cityName,
-      createdAt: new Date().toISOString(),
-      passwordHash: this.hashPassword(input.password),
-    };
-    users.push(newUser);
-    this.saveStoredAuthUsers(users);
-
-    const { passwordHash: _passwordHash, ...safeUser } = newUser;
-    return safeUser;
+    return await response.json() as AuthUser;
   }
 
   static async getAuthUsers(): Promise<AuthUser[]> {
     this.init();
-
     const token = this.getAuthToken();
-    if (token && !token.startsWith("local-")) {
-      try {
-        const response = await fetch("/api/auth/users", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (response.ok) {
-          return await response.json() as AuthUser[];
-        }
-      } catch {
-        // Use local users if the cloud API is unreachable.
-      }
+    if (!token) {
+      throw new Error("Sesi tidak ditemukan. Silakan masuk kembali.");
     }
-
-    return this.getStoredAuthUsers().map(({ passwordHash: _passwordHash, ...user }) => user);
+    const response = await fetch("/api/auth/users", { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) {
+      throw new Error(await this.readApiError(response) || "Tidak dapat mengambil daftar pengguna.");
+    }
+    return await response.json() as AuthUser[];
   }
 
   static async approveUser(id: string): Promise<AuthUser> {
     this.init();
-
     const token = this.getAuthToken();
-    if (token && !token.startsWith("local-")) {
-      try {
-        const response = await fetch(`/api/auth/users/${id}/approve`, {
-          method: "PUT",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (response.ok) {
-          return await response.json() as AuthUser;
-        }
-      } catch {
-        // Fall through to local approval.
-      }
+    if (!token) {
+      throw new Error("Sesi tidak ditemukan. Silakan masuk kembali.");
     }
-
-    const users = this.getStoredAuthUsers();
-    const user = users.find((item) => item.id === id);
-    if (!user) {
-      throw new Error("User tidak ditemukan.");
+    const response = await fetch(`/api/auth/users/${id}/approve`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      throw new Error(await this.readApiError(response) || "Persetujuan pengguna gagal.");
     }
-    user.status = "active";
-    user.approvedAt = new Date().toISOString();
-    this.saveStoredAuthUsers(users);
-    const { passwordHash: _passwordHash, ...safeUser } = user;
-    return safeUser;
+    return await response.json() as AuthUser;
   }
 
   static logout() {
     const token = this.getAuthToken();
     localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
-    if (token && !token.startsWith("local-")) {
+    if (token) {
       fetch("/api/auth/logout", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },

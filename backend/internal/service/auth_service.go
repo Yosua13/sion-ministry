@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"strings"
@@ -16,11 +17,12 @@ import (
 )
 
 type authService struct {
-	repo repository.AuthRepository
+	repo       repository.AuthRepository
+	sessionTTL time.Duration
 }
 
-func NewAuthService(repo repository.AuthRepository) AuthService {
-	return &authService{repo: repo}
+func NewAuthService(repo repository.AuthRepository, sessionTTL time.Duration) AuthService {
+	return &authService{repo: repo, sessionTTL: sessionTTL}
 }
 
 func (s *authService) Register(name string, email string, password string, role string, cityID string, cityName string) (*models.User, error) {
@@ -34,7 +36,10 @@ func (s *authService) Register(name string, email string, password string, role 
 	if len(password) < 8 {
 		return nil, errors.New("password minimal 8 karakter")
 	}
-	if role != "admin" && role != "pekerja" && role != "jemaat" {
+	if role == "admin" {
+		return nil, errors.New("role admin tidak dapat dibuat melalui pendaftaran publik")
+	}
+	if role != "pekerja" && role != "jemaat" {
 		return nil, errors.New("role tidak valid")
 	}
 	if _, err := s.repo.GetUserByEmail(email); err == nil {
@@ -55,7 +60,7 @@ func (s *authService) Register(name string, email string, password string, role 
 		PasswordHash: string(hash),
 		Role:         role,
 		Status:       "pending",
-		CityID:       cityID,
+		CityID:       optionalString(cityID),
 		CityName:     cityName,
 		CreatedAt:    time.Now().Format(time.RFC3339),
 	}
@@ -88,9 +93,9 @@ func (s *authService) Login(email string, password string) (*models.AuthResponse
 	if err != nil {
 		return nil, err
 	}
-	expiresAt := time.Now().Add(14 * 24 * time.Hour).Format(time.RFC3339)
+	expiresAt := time.Now().Add(s.sessionTTL).Format(time.RFC3339)
 	session := &models.AuthSession{
-		Token:     token,
+		Token:     hashSessionToken(token),
 		UserID:    user.ID,
 		ExpiresAt: expiresAt,
 		CreatedAt: time.Now().Format(time.RFC3339),
@@ -103,13 +108,13 @@ func (s *authService) Login(email string, password string) (*models.AuthResponse
 }
 
 func (s *authService) GetUserByToken(token string) (*models.User, error) {
-	session, err := s.repo.GetSession(token)
+	session, err := s.repo.GetSession(hashSessionToken(token))
 	if err != nil {
 		return nil, err
 	}
 	expiresAt, err := time.Parse(time.RFC3339, session.ExpiresAt)
 	if err != nil || expiresAt.Before(time.Now()) {
-		_ = s.repo.DeleteSession(token)
+		_ = s.repo.DeleteSession(session.Token)
 		return nil, errors.New("session sudah berakhir")
 	}
 
@@ -124,7 +129,46 @@ func (s *authService) GetUserByToken(token string) (*models.User, error) {
 }
 
 func (s *authService) Logout(token string) error {
-	return s.repo.DeleteSession(token)
+	return s.repo.DeleteSession(hashSessionToken(token))
+}
+
+func (s *authService) LogoutAll(userID string) error {
+	return s.repo.DeleteSessionsByUser(userID)
+}
+
+// EnsureBootstrapAdmin supports the one-time creation of the first administrator.
+// Both values come exclusively from the runtime environment and must be removed after
+// the administrator is created.
+func (s *authService) EnsureBootstrapAdmin(email string, password string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" && password == "" {
+		return nil
+	}
+	if email == "" || password == "" {
+		return errors.New("BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD must be set together")
+	}
+	if len(password) < 12 {
+		return errors.New("BOOTSTRAP_ADMIN_PASSWORD must contain at least 12 characters")
+	}
+	if _, err := s.repo.GetUserByEmail(email); err == nil {
+		return nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return s.repo.CreateUser(&models.User{
+		ID:           "usr-" + uuid.NewString(),
+		Name:         "Bootstrap Administrator",
+		Email:        email,
+		PasswordHash: string(hash),
+		Role:         "admin",
+		Status:       "active",
+		CreatedAt:    time.Now().Format(time.RFC3339),
+		ApprovedAt:   time.Now().Format(time.RFC3339),
+	})
 }
 
 func (s *authService) GetUsers() ([]models.User, error) {
@@ -150,4 +194,17 @@ func generateToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(bytes), nil
+}
+
+func hashSessionToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func optionalString(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
 }

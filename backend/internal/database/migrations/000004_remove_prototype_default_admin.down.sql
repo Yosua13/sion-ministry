@@ -1,0 +1,1 @@
+-- Deliberately irreversible: restoring a known credential would reintroduce a security vulnerability.
