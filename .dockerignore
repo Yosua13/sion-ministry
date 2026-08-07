@@ -1,0 +1,7 @@
+.git
+.antigravity
+**/.env
+**/node_modules
+frontend/dist
+backend/uploads
+docs/PRD_Sion_Ministry_Digital_Hub_v1.0.docx
