@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"backend/internal/models"
 	"backend/internal/monitoring"
 
 	"github.com/gofiber/fiber/v2"
@@ -118,6 +119,11 @@ func (h *Handlers) ServeUpload(c *fiber.Ctx) error {
 	filename := c.Params("filename")
 	if filename == "" || filepath.Base(filename) != filename || strings.Contains(filename, "..") {
 		return c.SendStatus(fiber.StatusNotFound)
+	}
+	user, _ := c.Locals("user").(*models.User)
+	access, _ := c.Locals("access").(*models.AccessContext)
+	if h.services == nil || h.services.Access == nil || !h.services.Access.CanAccessUpload(access, user, filename) {
+		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Media berada di luar scope akun.")
 	}
 	uploadDir := strings.TrimSpace(os.Getenv("UPLOAD_DIR"))
 	if uploadDir == "" {

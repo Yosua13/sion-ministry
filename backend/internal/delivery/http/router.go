@@ -43,57 +43,70 @@ func SetupRouter(app *fiber.App, handlers *Handlers, cfg *config.Config) {
 	protected.Get("/auth/me", handlers.Me)
 	protected.Post("/auth/logout", handlers.Logout)
 	protected.Post("/auth/logout-all", handlers.LogoutAll)
-	protected.Get("/auth/users", RequireRoles("admin"), handlers.GetUsers)
-	protected.Put("/auth/users/:id/approve", RequireRoles("admin"), handlers.ApproveUser)
+	protected.Get("/auth/access", handlers.GetAccessContext)
+	protected.Get("/auth/users", handlers.RequirePermission("user.manage"), handlers.GetUsers)
+	protected.Put("/auth/users/:id/approve", handlers.RequirePermission("user.manage"), handlers.ApproveUser)
+	protected.Get("/auth/role-assignments", handlers.RequirePermission("assignment.manage"), handlers.GetRoleAssignments)
+	protected.Post("/auth/role-assignments", handlers.RequirePermission("assignment.manage"), handlers.CreateRoleAssignment)
+	protected.Put("/auth/role-assignments/:id/approve", handlers.RequirePermission("assignment.manage"), handlers.ApproveRoleAssignment)
+	protected.Delete("/auth/role-assignments/:id", handlers.RequirePermission("assignment.manage"), handlers.RevokeRoleAssignment)
+	protected.Post("/auth/mentorships", handlers.RequirePermission("assignment.manage"), handlers.AssignMentor)
+	protected.Get("/auth/scopes", handlers.RequirePermission("assignment.manage"), handlers.GetScopeCatalog)
+	protected.Get("/auth/audit-logs", handlers.RequirePermission("audit.read"), handlers.GetAuditLogs)
+	protected.Get("/auth/sessions", handlers.GetSessions)
+	protected.Delete("/auth/sessions/:id", handlers.RevokeSession)
 
 	// AI Assistant
-	protected.Post("/gemini/assistant", aiLimiter, handlers.AiAssistant)
-	protected.Get("/uploads/:filename", handlers.ServeUpload)
-	protected.Post("/uploads/presign", RequireRoles("admin", "pekerja"), uploadLimiter, handlers.PresignUpload)
-	protected.Get("/uploads/signed", RequireRoles("admin", "pekerja"), handlers.PresignDownload)
+	protected.Post("/gemini/assistant", handlers.RequirePermission("ai.use"), aiLimiter, handlers.AiAssistant)
+	protected.Get("/uploads/:filename", handlers.RequirePermission("content.read"), handlers.ServeUpload)
+	protected.Post("/uploads/presign", handlers.RequirePermission("upload.write"), uploadLimiter, handlers.PresignUpload)
+	protected.Get("/uploads/signed", handlers.RequirePermission("upload.write"), handlers.PresignDownload)
 
 	// Sync endpoint
-	protected.Post("/sync", handlers.Sync)
+	protected.Post("/sync", handlers.RequirePermission("sync.write"), handlers.Sync)
 
 	// Cities
-	protected.Get("/cities", handlers.GetCities)
-	protected.Post("/cities", RequireRoles("admin", "pekerja"), handlers.CreateCity)
+	protected.Get("/cities", handlers.RequirePermission("city.read"), handlers.GetCities)
+	protected.Post("/cities", handlers.RequirePermission("city.manage"), handlers.CreateCity)
 
 	// Members
-	protected.Get("/members", RequireRoles("admin", "pekerja"), handlers.GetMembers)
-	protected.Post("/members", RequireRoles("admin", "pekerja"), handlers.CreateMember)
-	protected.Put("/members/:id", RequireRoles("admin", "pekerja"), handlers.UpdateMember)
-	protected.Delete("/members/:id", RequireRoles("admin"), handlers.DeleteMember)
+	protected.Get("/members", handlers.RequirePermission("member.read"), handlers.GetMembers)
+	protected.Post("/members", handlers.RequirePermission("member.write"), handlers.CreateMember)
+	protected.Put("/members/:id", handlers.RequirePermission("member.write"), handlers.UpdateMember)
+	protected.Delete("/members/:id", handlers.RequirePermission("member.delete"), handlers.DeleteMember)
 
 	// Berita Acara
-	protected.Get("/berita", RequireRoles("admin", "pekerja", "jemaat"), handlers.GetBerita)
-	protected.Post("/berita", RequireRoles("admin", "pekerja"), uploadLimiter, handlers.CreateBerita)
-	protected.Delete("/berita/:id", RequireRoles("admin"), handlers.DeleteBerita)
+	protected.Get("/berita", handlers.RequirePermission("event.read"), handlers.GetBerita)
+	protected.Post("/berita", handlers.RequirePermission("event.manage"), uploadLimiter, handlers.CreateBerita)
+	protected.Delete("/berita/:id", handlers.RequirePermission("event.delete"), handlers.DeleteBerita)
+	protected.Get("/attendance", handlers.RequirePermission("attendance.check_in"), handlers.GetAttendance)
+	protected.Post("/attendance/check-in", handlers.RequirePermission("attendance.check_in"), handlers.CheckInAttendance)
 
 	// Jurnal PA
-	protected.Get("/jurnal-pa", RequireRoles("admin", "pekerja", "jemaat"), handlers.GetJurnalPA)
-	protected.Post("/jurnal-pa", RequireRoles("admin", "pekerja"), uploadLimiter, handlers.CreateJurnalPA)
-	protected.Delete("/jurnal-pa/:id", RequireRoles("admin"), handlers.DeleteJurnalPA)
+	protected.Get("/jurnal-pa", handlers.RequirePermission("journal.sensitive.read"), handlers.GetJurnalPA)
+	protected.Post("/jurnal-pa", handlers.RequirePermission("journal.write"), uploadLimiter, handlers.CreateJurnalPA)
+	protected.Delete("/jurnal-pa/:id", handlers.RequirePermission("journal.delete"), handlers.DeleteJurnalPA)
 
 	// Donations
-	protected.Get("/campaigns", handlers.GetCampaigns)
-	protected.Post("/campaigns", RequireRoles("admin", "pekerja"), handlers.CreateCampaign)
-	protected.Get("/donations", RequireRoles("admin", "pekerja", "jemaat"), handlers.GetDonationRecords)
-	protected.Post("/donations", RequireRoles("admin", "pekerja"), handlers.CreateDonationRecord)
+	protected.Get("/campaigns", handlers.RequirePermission("donation.read"), handlers.GetCampaigns)
+	protected.Post("/campaigns", handlers.RequirePermission("content.publish"), handlers.CreateCampaign)
+	protected.Get("/donations", handlers.RequirePermission("donation.read"), handlers.GetDonationRecords)
+	protected.Post("/donations", handlers.RequirePermission("donation.create"), handlers.CreateDonationRecord)
+	protected.Put("/donations/:id/verify", handlers.RequirePermission("donation.verify"), handlers.VerifyDonationRecord)
 
 	// Links
-	protected.Get("/links", handlers.GetLinks)
-	protected.Post("/links", RequireRoles("admin", "pekerja"), handlers.CreateLink)
-	protected.Put("/links/:id", RequireRoles("admin", "pekerja"), handlers.UpdateLink)
-	protected.Delete("/links/:id", RequireRoles("admin"), handlers.DeleteLink)
+	protected.Get("/links", handlers.RequirePermission("content.read"), handlers.GetLinks)
+	protected.Post("/links", handlers.RequirePermission("content.publish"), handlers.CreateLink)
+	protected.Put("/links/:id", handlers.RequirePermission("content.publish"), handlers.UpdateLink)
+	protected.Delete("/links/:id", handlers.RequirePermission("content.publish"), handlers.DeleteLink)
 
 	// Jobs
-	protected.Get("/jobs", handlers.GetJobs)
-	protected.Post("/jobs", RequireRoles("admin", "pekerja"), handlers.CreateJob)
-	protected.Get("/applications", RequireRoles("admin", "pekerja"), handlers.GetJobApplications)
-	protected.Post("/applications", handlers.CreateJobApplication)
+	protected.Get("/jobs", handlers.RequirePermission("job.read"), handlers.GetJobs)
+	protected.Post("/jobs", handlers.RequirePermission("content.publish"), handlers.CreateJob)
+	protected.Get("/applications", handlers.RequirePermission("application.read"), handlers.GetJobApplications)
+	protected.Post("/applications", handlers.RequirePermission("job.apply"), handlers.CreateJobApplication)
 
 	// Modules
-	protected.Get("/modules", handlers.GetModules)
-	protected.Put("/modules/:id", handlers.UpdateModule)
+	protected.Get("/modules", handlers.RequirePermission("module.read"), handlers.GetModules)
+	protected.Put("/modules/:id", handlers.RequirePermission("module.publish"), handlers.UpdateModule)
 }

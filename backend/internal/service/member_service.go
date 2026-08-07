@@ -18,6 +18,10 @@ func (s *memberService) GetAll() ([]models.Member, error) {
 	return s.memberRepo.GetAll()
 }
 
+func (s *memberService) GetByID(id string) (*models.Member, error) {
+	return s.memberRepo.GetByID(id)
+}
+
 func (s *memberService) Create(member *models.Member) error {
 	if err := s.memberRepo.Create(member); err != nil {
 		return err

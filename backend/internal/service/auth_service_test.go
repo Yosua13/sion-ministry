@@ -27,6 +27,9 @@ func (r *memoryAuthRepository) CreateUser(user *models.User) error {
 	r.users[user.Email] = user
 	return nil
 }
+func (r *memoryAuthRepository) CreateUserWithAssignment(user *models.User, _ *models.RoleAssignment) error {
+	return r.CreateUser(user)
+}
 func (r *memoryAuthRepository) GetUserByEmail(email string) (*models.User, error) {
 	if user, found := r.users[email]; found {
 		return user, nil
@@ -46,6 +49,9 @@ func (r *memoryAuthRepository) UpdateUser(user *models.User) error {
 	r.users[user.Email] = user
 	return nil
 }
+func (r *memoryAuthRepository) ApproveUserWithAssignment(user *models.User, _ *models.RoleAssignment, _ *models.AuditLog) error {
+	return r.UpdateUser(user)
+}
 func (r *memoryAuthRepository) CreateSession(session *models.AuthSession) error {
 	r.sessions[session.Token] = session
 	return nil
@@ -55,6 +61,10 @@ func (r *memoryAuthRepository) GetSession(token string) (*models.AuthSession, er
 		return session, nil
 	}
 	return nil, gorm.ErrRecordNotFound
+}
+func (r *memoryAuthRepository) UpdateSession(session *models.AuthSession) error {
+	r.sessions[session.Token] = session
+	return nil
 }
 func (r *memoryAuthRepository) DeleteSession(token string) error {
 	delete(r.sessions, token)
@@ -68,6 +78,7 @@ func (r *memoryAuthRepository) DeleteSessionsByUser(userID string) error {
 	}
 	return nil
 }
+func (r *memoryAuthRepository) CreateAuditLog(_ *models.AuditLog) error { return nil }
 
 func TestRegisterRejectsPublicAdminRole(t *testing.T) {
 	service := NewAuthService(newMemoryAuthRepository(), time.Hour)

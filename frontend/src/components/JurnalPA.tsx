@@ -55,6 +55,7 @@ export default function JurnalPAComponent({
   const [formScripture, setFormScripture] = useState("");
   const [formFocus, setFormFocus] = useState("");
   const [formMenteeName, setFormMenteeName] = useState("");
+  const [formMenteeId, setFormMenteeId] = useState("");
   const [formMentorName, setFormMentorName] = useState("");
   const [formDate, setFormDate] = useState("");
   const [formCityId, setFormCityId] = useState("");
@@ -115,6 +116,7 @@ export default function JurnalPAComponent({
     setFormScripture("");
     setFormFocus("");
     setFormMenteeName("");
+    setFormMenteeId("");
     setFormMentorName("");
     setFormDate("");
     setFormCityId("");
@@ -163,7 +165,7 @@ export default function JurnalPAComponent({
     
     // Inline validation
     const tempErrors: Record<string, string> = {};
-    if (!formMenteeName.trim()) tempErrors.menteeName = "Nama murid/mentee wajib diisi";
+    if (!formMenteeId) tempErrors.menteeName = "Mentee aktif wajib dipilih";
     if (!formMentorName.trim()) tempErrors.mentorName = "Nama mentor/pekerja wajib diisi";
     if (!formTheme.trim()) tempErrors.theme = "Tema bimbingan PA wajib diisi";
     if (!formScripture.trim()) tempErrors.scripture = "Nats Alkitab (kitab/pasal) wajib diisi";
@@ -188,6 +190,7 @@ export default function JurnalPAComponent({
       scripture: formScripture,
       focus: formFocus,
       menteeName: formMenteeName,
+      menteeId: formMenteeId,
       mentorName: formMentorName,
       date: formDate,
       cityId: formCityId,
@@ -461,16 +464,26 @@ export default function JurnalPAComponent({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nama Mentee/Murid</label>
-                  <input
-                    type="text"
-                    list="jurnal-name-suggestions"
-                    placeholder="Misal: Roy, Handoko..."
-                    value={formMenteeName}
-                    onChange={(e) => setFormMenteeName(e.target.value)}
+                  <select
+                    value={formMenteeId}
+                    onChange={(e) => {
+                      const member = members.find((item) => item.id === e.target.value);
+                      setFormMenteeId(e.target.value);
+                      setFormMenteeName(member?.name || "");
+                      if (member) {
+                        setFormCityId(member.cityId);
+                        setFormMentorName(member.mentorName);
+                      }
+                    }}
                     className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
                       errors.menteeName ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
                     }`}
-                  />
+                  >
+                    <option value="">-- Pilih mentee aktif --</option>
+                    {members.filter((member) => member.status === "active").map((member) => (
+                      <option key={member.id} value={member.id}>{member.name} · {member.cityName}</option>
+                    ))}
+                  </select>
                   {errors.menteeName && (
                     <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.menteeName}</span>
                   )}

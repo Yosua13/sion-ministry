@@ -49,6 +49,7 @@ func main() {
 
 	// 4. Initialize Services
 	authService := service.NewAuthService(authRepo, cfg.SessionTTL)
+	accessService := service.NewAccessService(db)
 	if err := authService.EnsureBootstrapAdmin(cfg.BootstrapAdminEmail, cfg.BootstrapAdminPassword); err != nil {
 		log.Fatalf("Administrator bootstrap failed: %v", err)
 	}
@@ -79,6 +80,7 @@ func main() {
 		Module:   moduleService,
 		AI:       aiService,
 		Sync:     syncService,
+		Access:   accessService,
 	}
 
 	// 5. Initialize Handlers

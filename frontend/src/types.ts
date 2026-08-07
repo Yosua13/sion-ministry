@@ -33,6 +33,71 @@ export interface AuthSession {
   expiresAt: string;
 }
 
+export type ScopedRole = AuthRole | "mentor" | "content_publisher" | "auditor" | "donation_verifier";
+export type ScopeType = "organization" | "ministry_unit" | "region" | "city" | "self";
+
+export interface RoleAssignment {
+  id: string;
+  userId: string;
+  role: ScopedRole;
+  scopeType: ScopeType;
+  scopeId: string;
+  status: "pending" | "active" | "revoked" | "expired";
+  validFrom: string;
+  validUntil?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  revokedAt?: string;
+  createdAt: string;
+}
+
+export interface AccessContext {
+  userId: string;
+  permissions: string[];
+  roles: ScopedRole[];
+  cityIds: string[];
+  allCities: boolean;
+  assignments: RoleAssignment[];
+}
+
+export interface ScopeOption {
+  id: string;
+  name: string;
+}
+
+export interface ScopeCatalog {
+  organizations: ScopeOption[];
+  ministryUnits: Array<ScopeOption & { organizationId: string }>;
+  regions: Array<ScopeOption & { ministryUnitId: string }>;
+  cities: City[];
+}
+
+export interface DeviceSession {
+  id: string;
+  userId: string;
+  expiresAt: string;
+  createdAt: string;
+  deviceName: string;
+  userAgent: string;
+  ipAddress: string;
+  lastSeenAt: string;
+}
+
+export interface AuditLog {
+  id: string;
+  actorUserId?: string;
+  action: string;
+  resourceType: string;
+  resourceId?: string;
+  scopeType?: string;
+  scopeId?: string;
+  outcome: "success" | "denied" | "failure";
+  requestId?: string;
+  ipAddress?: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface Member {
   id: string;
   name: string;
@@ -43,6 +108,8 @@ export interface Member {
   mentorName: string;
   joinedDate: string;
   status: "active" | "inactive";
+  userId?: string;
+  mentorUserId?: string;
 }
 
 export interface City {
@@ -55,6 +122,9 @@ export interface City {
   journalsCount: number;
   beritaCount?: number;
   jurnalPaCount?: number;
+  organizationId?: string;
+  ministryUnitId?: string;
+  regionId?: string;
 }
 
 export interface BeritaAcara {
@@ -70,6 +140,7 @@ export interface BeritaAcara {
   images: string[]; // Supports multiple image paths (Instagram style)
   synced: boolean;
   action?: "create" | "update" | "delete" | null;
+  isPublic?: boolean;
 }
 
 export interface JurnalPA {
@@ -86,6 +157,8 @@ export interface JurnalPA {
   image: string; // Documenting the bible study (single image upload)
   synced: boolean;
   action?: "create" | "update" | "delete" | null;
+  menteeId?: string;
+  mentorUserId?: string;
 }
 
 export interface DonationCampaign {
@@ -112,6 +185,20 @@ export interface DonationRecord {
   message: string;
   date: string;
   paymentMethod: string;
+  cityId?: string;
+  userId?: string;
+  status?: "pending" | "verified" | "rejected";
+  verifiedBy?: string;
+  verifiedAt?: string;
+}
+
+export interface AttendanceCheckIn {
+  id: string;
+  eventId: string;
+  memberId: string;
+  cityId: string;
+  checkedInBy: string;
+  checkedInAt: string;
 }
 
 export interface DiscipleshipLink {
@@ -163,4 +250,6 @@ export interface JobApplication {
   applicantResume?: string; // Text or short description of bio
   appliedDate: string;
   notes?: string;
+  cityId?: string;
+  userId?: string;
 }
