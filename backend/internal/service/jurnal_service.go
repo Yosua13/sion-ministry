@@ -20,9 +20,10 @@ func (s *jurnalService) GetAll() ([]models.JurnalPA, error) {
 
 func (s *jurnalService) Create(jurnal *models.JurnalPA) error {
 	newPath, err := saveBase64Image(jurnal.Image, "jurnal")
-	if err == nil {
-		jurnal.Image = newPath
+	if err != nil {
+		return err
 	}
+	jurnal.Image = newPath
 	if err := s.jurnalRepo.Create(jurnal); err != nil {
 		return err
 	}

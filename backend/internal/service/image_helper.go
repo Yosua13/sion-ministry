@@ -1,64 +1,85 @@
 package service
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
-	"math/rand"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
-// saveBase64Image processes a base64 image string and saves it to the uploads folder.
-// It returns the public URL/path of the saved image, or the original string if it's not base64.
+const (
+	maxUploadBytes    = 5 << 20
+	maxImageDimension = 4096
+)
+
+var ErrInvalidUpload = errors.New("invalid image upload")
+
+func invalidUpload(format string, args ...any) error {
+	return fmt.Errorf("%w: "+format, append([]any{ErrInvalidUpload}, args...)...)
+}
+
+// saveBase64Image validates a base64 image completely before creating the upload directory
+// or writing any file. Remote URLs are retained because legacy records already use them.
 func saveBase64Image(dataStr string, prefix string) (string, error) {
 	if !strings.HasPrefix(dataStr, "data:image/") {
 		return dataStr, nil
 	}
 
-	// Format: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...
 	parts := strings.SplitN(dataStr, ";base64,", 2)
 	if len(parts) != 2 {
-		return dataStr, nil
+		return "", invalidUpload("format upload gambar tidak valid")
 	}
 
-	header := parts[0]
-	base64Data := parts[1]
-
-	// Extract extension
-	ext := "png" // default
-	if strings.Contains(header, "image/jpeg") || strings.Contains(header, "image/jpg") {
-		ext = "jpg"
-	} else if strings.Contains(header, "image/gif") {
-		ext = "gif"
-	} else if strings.Contains(header, "image/webp") {
-		ext = "webp"
-	} else if strings.Contains(header, "image/svg+xml") {
-		ext = "svg"
+	mimeType := strings.TrimPrefix(parts[0], "data:")
+	extension, allowed := map[string]string{
+		"image/jpeg": "jpg",
+		"image/png":  "png",
+	}[mimeType]
+	if !allowed {
+		return "", invalidUpload("format gambar tidak didukung; gunakan PNG atau JPEG")
 	}
 
-	// Decode base64
-	decoded, err := base64.StdEncoding.DecodeString(base64Data)
+	decoded, err := base64.StdEncoding.DecodeString(parts[1])
 	if err != nil {
-		return "", fmt.Errorf("failed to decode base64: %w", err)
+		return "", invalidUpload("data gambar tidak valid")
+	}
+	if len(decoded) == 0 || len(decoded) > maxUploadBytes {
+		return "", invalidUpload("ukuran gambar harus antara 1 byte dan %d MB", maxUploadBytes>>20)
 	}
 
-	// Ensure uploads directory exists
-	uploadDir := "./uploads"
+	config, format, err := image.DecodeConfig(bytes.NewReader(decoded))
+	if err != nil {
+		return "", invalidUpload("isi berkas bukan gambar valid")
+	}
+	if (mimeType == "image/jpeg" && format != "jpeg") || (mimeType == "image/png" && format != "png") {
+		return "", invalidUpload("tipe MIME gambar tidak cocok dengan isi berkas")
+	}
+	if config.Width < 1 || config.Height < 1 || config.Width > maxImageDimension || config.Height > maxImageDimension {
+		return "", invalidUpload("dimensi gambar harus maksimal %d x %d piksel", maxImageDimension, maxImageDimension)
+	}
+
+	uploadDir := strings.TrimSpace(os.Getenv("UPLOAD_DIR"))
+	if uploadDir == "" {
+		uploadDir = "./uploads"
+	}
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create upload directory: %w", err)
+		return "", fmt.Errorf("gagal menyiapkan penyimpanan upload")
 	}
 
-	// Generate clean and professional filename
-	filename := fmt.Sprintf("img_%s_%d_%d.%s", prefix, time.Now().Unix(), rand.Intn(1000), ext)
+	checksum := sha256.Sum256(decoded)
+	filename := fmt.Sprintf("img_%s_%x.%s", prefix, checksum[:16], extension)
 	filePath := filepath.Join(uploadDir, filename)
 
-	// Write file
 	if err := os.WriteFile(filePath, decoded, 0644); err != nil {
-		return "", fmt.Errorf("failed to write file: %w", err)
+		return "", fmt.Errorf("gagal menyimpan gambar")
 	}
 
-	// Return public URL path
 	return fmt.Sprintf("/api/uploads/%s", filename), nil
 }
