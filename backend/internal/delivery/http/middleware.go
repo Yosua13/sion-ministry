@@ -9,12 +9,12 @@ import (
 func (h *Handlers) RequireAuth(c *fiber.Ctx) error {
 	token := getBearerToken(c)
 	if token == "" {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "authorization token wajib dikirim"})
+		return WriteAPIError(c, fiber.StatusUnauthorized, "missing_token", "Authorization token wajib dikirim.")
 	}
 
 	user, err := h.services.Auth.GetUserByToken(token)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
+		return WriteAPIError(c, fiber.StatusUnauthorized, "invalid_session", "Sesi tidak valid atau sudah berakhir.")
 	}
 	c.Locals("user", user)
 	return c.Next()
@@ -29,10 +29,10 @@ func RequireRoles(roles ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		user, ok := c.Locals("user").(*models.User)
 		if !ok || user == nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "session tidak ditemukan"})
+			return WriteAPIError(c, fiber.StatusUnauthorized, "missing_session", "Sesi tidak ditemukan.")
 		}
 		if !allowed[user.Role] {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "role akun tidak memiliki akses"})
+			return WriteAPIError(c, fiber.StatusForbidden, "forbidden", "Role akun tidak memiliki akses.")
 		}
 		return c.Next()
 	}

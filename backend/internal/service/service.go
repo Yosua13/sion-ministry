@@ -68,6 +68,8 @@ type AuthService interface {
 	Login(email string, password string) (*models.AuthResponse, error)
 	GetUserByToken(token string) (*models.User, error)
 	Logout(token string) error
+	LogoutAll(userID string) error
+	EnsureBootstrapAdmin(email string, password string) error
 	GetUsers() ([]models.User, error)
 	ApproveUser(id string) (*models.User, error)
 }

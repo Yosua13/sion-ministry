@@ -17,23 +17,3 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
     expires_at TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
-
-INSERT INTO users (
-    id,
-    name,
-    email,
-    password_hash,
-    role,
-    status,
-    created_at,
-    approved_at
-) VALUES (
-    'usr-admin-default',
-    'Admin Sion',
-    'admin@sionministry.local',
-    '$2a$10$tc2fAiO9OJ2nAGIgZDyKkuvo9CWQPIBC.PsFxzfyo1HJbXJe9ZekG',
-    'admin',
-    'active',
-    NOW()::TEXT,
-    NOW()::TEXT
-) ON CONFLICT (email) DO NOTHING;

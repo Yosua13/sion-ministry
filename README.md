@@ -158,14 +158,7 @@ sion-academy/
 ---
 
 ### Langkah 1: Setup Database PostgreSQL
-Pastikan database PostgreSQL Anda berjalan secara lokal pada port default `5432`.
-1. Masuk ke console PostgreSQL Anda dan buat database baru bernama `sion_ministry` (atau backend akan mencoba membuatnya otomatis jika user memiliki kewenangan).
-2. Kredensial default yang terkonfigurasi pada backend adalah:
-   * **Host**: `localhost`
-   * **Port**: `5432`
-   * **User**: `postgres`
-   * **Password**: `postgres`
-   * **Database**: `sion_ministry`
+Pastikan PostgreSQL tersedia, lalu buat kredensial dan database khusus untuk lingkungan Anda. Tidak ada kredensial database atau akun aplikasi default di repository.
 
 ---
 
@@ -178,7 +171,7 @@ Pastikan database PostgreSQL Anda berjalan secara lokal pada port default `5432`
    ```bash
    cp .env.example .env
    ```
-3. Sesuaikan konfigurasi database jika kredensial PostgreSQL lokal Anda berbeda dari nilai default.
+3. Isi seluruh nilai `DB_*` di `.env`, `CORS_ALLOWED_ORIGINS`, dan konfigurasi opsional yang diperlukan. Backend menolak konfigurasi database kosong serta allowlist CORS wildcard.
 4. *(Opsional)* Dapatkan API Key Gemini dari Google AI Studio dan tambahkan ke berkas `.env` Anda untuk mengaktifkan fitur Asisten AI:
    ```env
    GEMINI_API_KEY=your_gemini_api_key_here
@@ -187,7 +180,7 @@ Pastikan database PostgreSQL Anda berjalan secara lokal pada port default `5432`
    ```bash
    go run main.go
    ```
-   Backend akan berjalan di port `3000` (atau port lain yang Anda tetapkan di `.env`). Backend secara otomatis menjalankan migrasi SQL untuk membuat tabel-tabel yang diperlukan dan memasukkan data sampel inisiasi (seeding).
+   Backend akan berjalan di port `3000` (atau port lain yang Anda tetapkan di `.env`) dan menjalankan migrasi SQL secara otomatis.
 
 ---
 
@@ -208,10 +201,18 @@ Pastikan database PostgreSQL Anda berjalan secara lokal pada port default `5432`
 
 ---
 
-## 🔐 Autentikasi & Akun Default
+## 🔐 Autentikasi
 
 Platform ini dilengkapi dengan sistem Autentikasi dan Role-Based Access Control (RBAC) untuk Admin, Pekerja, dan Jemaat.
 
-### Akun Admin Default (Seeding)
+Tidak ada akun admin default atau login offline. Pendaftaran publik hanya dapat membuat akun pekerja atau jemaat dan memerlukan approval admin. Untuk membuat administrator pertama, injeksikan `BOOTSTRAP_ADMIN_EMAIL` dan `BOOTSTRAP_ADMIN_PASSWORD` sekali dari secret manager, jalankan aplikasi, lalu hapus kedua nilai tersebut. Lihat [panduan keamanan dan operasi](docs/security-operations.md) untuk konfigurasi, rotasi secret, storage upload, dan restore drill.
 
-Setelah masuk, Admin dapat menyetujui (approve) registrasi baru untuk Pekerja dan mengelola seluruh data pelayanan.
+## 🐳 Docker
+
+Salin `backend/.env.example` ke `backend/.env` dan isi semua variabel, lalu jalankan:
+
+```bash
+docker compose --env-file backend/.env up --build
+```
+
+Perintah ini membangun frontend dan API dari clone bersih serta menjalankan PostgreSQL lokal dalam volume terpisah.

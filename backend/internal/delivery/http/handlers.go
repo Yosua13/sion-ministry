@@ -1,22 +1,29 @@
 package http
 
 import (
+	"context"
+	"errors"
 	"log"
 	"strings"
 
 	"backend/internal/models"
+	"backend/internal/objectstore"
 	"backend/internal/service"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/valyala/fasthttp"
 )
 
 type Handlers struct {
-	services *service.Service
+	services    *service.Service
+	objectStore objectstore.Presigner
 }
 
-func NewHandlers(services *service.Service) *Handlers {
-	return &Handlers{services: services}
+func NewHandlers(services *service.Service, objectStores ...objectstore.Presigner) *Handlers {
+	var store objectstore.Presigner
+	if len(objectStores) > 0 {
+		store = objectStores[0]
+	}
+	return &Handlers{services: services, objectStore: store}
 }
 
 // Health Check
@@ -45,11 +52,11 @@ func (h *Handlers) Register(c *fiber.Ctx) error {
 		CityName string `json:"cityName"`
 	}
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Payload pendaftaran tidak valid.")
 	}
 	user, err := h.services.Auth.Register(req.Name, req.Email, req.Password, req.Role, req.CityID, req.CityName)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		return WriteAPIError(c, fiber.StatusBadRequest, "registration_failed", err.Error())
 	}
 	return c.Status(fiber.StatusCreated).JSON(user)
 }
@@ -60,11 +67,11 @@ func (h *Handlers) Login(c *fiber.Ctx) error {
 		Password string `json:"password"`
 	}
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Payload login tidak valid.")
 	}
 	session, err := h.services.Auth.Login(req.Email, req.Password)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
+		return WriteAPIError(c, fiber.StatusUnauthorized, "invalid_credentials", err.Error())
 	}
 	return c.JSON(session)
 }
@@ -73,7 +80,7 @@ func (h *Handlers) Me(c *fiber.Ctx) error {
 	token := getBearerToken(c)
 	user, err := h.services.Auth.GetUserByToken(token)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
+		return WriteAPIError(c, fiber.StatusUnauthorized, "invalid_session", "Sesi tidak valid atau sudah berakhir.")
 	}
 	return c.JSON(user)
 }
@@ -86,10 +93,50 @@ func (h *Handlers) Logout(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"success": true})
 }
 
+func (h *Handlers) LogoutAll(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(*models.User)
+	if !ok || user == nil {
+		return WriteAPIError(c, fiber.StatusUnauthorized, "missing_session", "Sesi tidak ditemukan.")
+	}
+	if err := h.services.Auth.LogoutAll(user.ID); err != nil {
+		return WriteAPIError(c, fiber.StatusInternalServerError, "session_revocation_failed", "Gagal mencabut sesi.")
+	}
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func (h *Handlers) PresignUpload(c *fiber.Ctx) error {
+	if h.objectStore == nil {
+		return WriteAPIError(c, fiber.StatusServiceUnavailable, "object_storage_unavailable", "Object storage belum dikonfigurasi.")
+	}
+	var input objectstore.PresignInput
+	if err := c.BodyParser(&input); err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Payload upload tidak valid.")
+	}
+	if _, err := objectstore.ValidateInput(input); err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_upload", err.Error())
+	}
+	request, err := h.objectStore.PresignUpload(context.Background(), input)
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusBadGateway, "object_storage_error", "Gagal membuat signed URL upload.")
+	}
+	return c.Status(fiber.StatusCreated).JSON(request)
+}
+
+func (h *Handlers) PresignDownload(c *fiber.Ctx) error {
+	if h.objectStore == nil {
+		return WriteAPIError(c, fiber.StatusServiceUnavailable, "object_storage_unavailable", "Object storage belum dikonfigurasi.")
+	}
+	request, err := h.objectStore.PresignDownload(context.Background(), c.Query("key"))
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_object_key", "Object key tidak valid.")
+	}
+	return c.JSON(request)
+}
+
 func (h *Handlers) GetUsers(c *fiber.Ctx) error {
 	users, err := h.services.Auth.GetUsers()
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return WriteAPIError(c, fiber.StatusInternalServerError, "users_lookup_failed", "Gagal mengambil daftar pengguna.")
 	}
 	return c.JSON(users)
 }
@@ -97,7 +144,7 @@ func (h *Handlers) GetUsers(c *fiber.Ctx) error {
 func (h *Handlers) ApproveUser(c *fiber.Ctx) error {
 	user, err := h.services.Auth.ApproveUser(c.Params("id"))
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return WriteAPIError(c, fiber.StatusInternalServerError, "user_approval_failed", "Gagal menyetujui pengguna.")
 	}
 	return c.JSON(user)
 }
@@ -178,6 +225,9 @@ func (h *Handlers) CreateBerita(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 	if err := h.services.Berita.Create(&b); err != nil {
+		if isUploadValidationError(err) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": APIError{Code: "invalid_upload", Message: err.Error(), RequestID: requestID(c)}})
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.Status(fiber.StatusCreated).JSON(b)
@@ -206,9 +256,16 @@ func (h *Handlers) CreateJurnalPA(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 	if err := h.services.Jurnal.Create(&j); err != nil {
+		if isUploadValidationError(err) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": APIError{Code: "invalid_upload", Message: err.Error(), RequestID: requestID(c)}})
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.Status(fiber.StatusCreated).JSON(j)
+}
+
+func isUploadValidationError(err error) bool {
+	return errors.Is(err, service.ErrInvalidUpload)
 }
 
 func (h *Handlers) DeleteJurnalPA(c *fiber.Ctx) error {
@@ -392,34 +449,4 @@ func (h *Handlers) Sync(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"success": true})
-}
-
-// original lambda proxy handler (in case the frontend calls it)
-func (h *Handlers) LambdaProxy(c *fiber.Ctx) error {
-	lambdaURL := "https://uzepc6y2d76yrnmctvuc7j7mqe0xvbii.lambda-url.ap-southeast-3.on.aws/"
-
-	// Create client request
-	req := fasthttp.AcquireRequest()
-	defer fasthttp.ReleaseRequest(req)
-
-	resp := fasthttp.AcquireResponse()
-	defer fasthttp.ReleaseResponse(resp)
-
-	req.SetRequestURI(lambdaURL)
-	req.Header.SetMethod(c.Method())
-	req.Header.SetContentType("application/json")
-	req.SetBody(c.Body())
-
-	client := &fasthttp.Client{}
-	if err := client.Do(req, resp); err != nil {
-		log.Printf("Lambda proxy request failed, falling back to local: %v", err)
-		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{
-			"error":             "Gateway Timeout / Unreachable",
-			"message":           err.Error(),
-			"fallbackToOffline": true,
-		})
-	}
-
-	c.Status(resp.StatusCode())
-	return c.Send(resp.Body())
 }

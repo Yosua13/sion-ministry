@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -52,9 +53,8 @@ type GeminiResponse struct {
 }
 
 func (s *aiService) GetAssistantResponse(prompt string, systemInstruction string) (string, error) {
-	if s.cfg.GeminiAPIKey == "" || s.cfg.GeminiAPIKey == "MY_GEMINI_API_KEY" {
-		// Mock simulation fallback
-		return "Sion AI Assistant sedang dalam Mode Simulasi (Kunci API Gemini tidak terkonfigurasi di Settings > Secrets). Silakan atur GEMINI_API_KEY Anda untuk mengaktifkan AI sepenuhnya!\n\nBerikut adalah respon simulasi pemuridan:\n\n*Amanat Agung (Matius 28:19-20)* adalah panggilan bagi kita semua pekerja Sion Ministry untuk memuridkan bangsa-bangsa. Dalam konteks pemuridan Anda saat ini, berfokuslah membangun kedekatan pribadi dengan jemaat dan mendampingi mereka mempelajari modul-modul dasar iman Kristen secara konsisten.", nil
+	if s.cfg.GeminiAPIKey == "" {
+		return "", errors.New("layanan AI belum dikonfigurasi")
 	}
 
 	if systemInstruction == "" {

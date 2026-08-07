@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 
 	"backend/config"
 	"backend/internal/database"
 	delivery "backend/internal/delivery/http"
+	"backend/internal/monitoring"
+	"backend/internal/objectstore"
 	"backend/internal/repository"
 	"backend/internal/service"
 
@@ -17,7 +20,15 @@ func main() {
 	log.Println("Starting Sion Academy Backend...")
 
 	// 1. Load config
-	cfg := config.LoadConfig()
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("Invalid configuration: %v", err)
+	}
+	flushMonitoring, err := monitoring.Init(cfg.SentryDSN, cfg.AppEnv)
+	if err != nil {
+		log.Fatalf("Error monitoring initialization failed: %v", err)
+	}
+	defer flushMonitoring()
 
 	// 2. Initialize PostgreSQL Database
 	db, err := database.InitDatabase(cfg)
@@ -37,7 +48,14 @@ func main() {
 	moduleRepo := repository.NewModuleRepository(db)
 
 	// 4. Initialize Services
-	authService := service.NewAuthService(authRepo)
+	authService := service.NewAuthService(authRepo, cfg.SessionTTL)
+	if err := authService.EnsureBootstrapAdmin(cfg.BootstrapAdminEmail, cfg.BootstrapAdminPassword); err != nil {
+		log.Fatalf("Administrator bootstrap failed: %v", err)
+	}
+	storage, err := objectstore.NewPresigner(context.Background(), cfg)
+	if err != nil {
+		log.Fatalf("Object storage initialization failed: %v", err)
+	}
 	cityService := service.NewCityService(cityRepo)
 	memberService := service.NewMemberService(memberRepo, cityRepo)
 	beritaService := service.NewBeritaService(beritaRepo, cityRepo)
@@ -64,18 +82,16 @@ func main() {
 	}
 
 	// 5. Initialize Handlers
-	handlers := delivery.NewHandlers(services)
+	handlers := delivery.NewHandlers(services, storage)
 
 	// 6. Setup Fiber Application
 	app := fiber.New(fiber.Config{
-		AppName: "Sion Academy API Server",
+		AppName:      "Sion Academy API Server",
+		ErrorHandler: delivery.ErrorHandler,
 	})
 
 	// Setup routes
-	delivery.SetupRouter(app, handlers)
-
-	// Static uploads directory
-	app.Static("/api/uploads", "./uploads")
+	delivery.SetupRouter(app, handlers, cfg)
 
 	// 7. Serve Frontend static assets in Production
 	if cfg.AppEnv == "production" {

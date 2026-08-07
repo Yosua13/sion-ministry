@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci_user
+          POSTGRES_PASSWORD: ci_password_not_for_production
+          POSTGRES_DB: sion_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci_user -d sion_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_USER: ci_user
+      DB_PASSWORD: ci_password_not_for_production
+      DB_NAME: sion_ci
+      APP_ENV: test
+      CORS_ALLOWED_ORIGINS: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Go format, vet, test, and build
+        working-directory: backend
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go test ./...
+          go build ./...
+      - name: Frontend lint, audit, and build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm audit --audit-level=high
+          npm run build
+      - name: Verify migrations at startup
+        working-directory: backend
+        run: |
+          go run main.go > /tmp/sion-api.log 2>&1 &
+          api_pid=$!
+          trap 'kill $api_pid; cat /tmp/sion-api.log' EXIT
+          for attempt in $(seq 1 20); do
+            curl --fail --silent http://127.0.0.1:3000/api/health && exit 0
+            sleep 1
+          done
+          cat /tmp/sion-api.log
+          exit 1
+      - name: Build production container
+        run: docker build --tag sion-academy:ci .
+      - name: Prove PostgreSQL backup and restore
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+          export PGPASSWORD="$DB_PASSWORD"
+          pg_dump --host "$DB_HOST" --port "$DB_PORT" --username "$DB_USER" --format=custom --file /tmp/sion-ci.dump "$DB_NAME"
+          createdb --host "$DB_HOST" --port "$DB_PORT" --username "$DB_USER" sion_restore_ci
+          pg_restore --host "$DB_HOST" --port "$DB_PORT" --username "$DB_USER" --dbname sion_restore_ci --clean --if-exists --no-owner --no-privileges --exit-on-error /tmp/sion-ci.dump
+          psql --host "$DB_HOST" --port "$DB_PORT" --username "$DB_USER" --dbname sion_restore_ci --command "SELECT COUNT(*) FROM schema_migrations;"
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
