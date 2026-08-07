@@ -3,9 +3,13 @@ package http
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"backend/internal/monitoring"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -52,6 +56,7 @@ func SecurityHeaders(production bool) fiber.Handler {
 }
 
 func ErrorHandler(c *fiber.Ctx, err error) error {
+	monitoring.CaptureError(err, requestID(c), c.Path())
 	status := fiber.StatusInternalServerError
 	code := "internal_error"
 	message := "Terjadi kesalahan pada server."
@@ -63,11 +68,44 @@ func ErrorHandler(c *fiber.Ctx, err error) error {
 	return c.Status(status).JSON(fiber.Map{"error": APIError{Code: code, Message: message, RequestID: requestID(c)}})
 }
 
+// NormalizeErrorResponses keeps legacy handlers from leaking raw database errors or
+// returning a different error schema than newer handlers.
+func NormalizeErrorResponses() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if err := c.Next(); err != nil {
+			return err
+		}
+		status := c.Response().StatusCode()
+		if status < fiber.StatusBadRequest || len(c.Response().Body()) == 0 {
+			return nil
+		}
+		var response struct {
+			Error any `json:"error"`
+		}
+		if err := json.Unmarshal(c.Response().Body(), &response); err != nil {
+			return nil
+		}
+		message, isLegacyError := response.Error.(string)
+		if !isLegacyError {
+			return nil
+		}
+		code := "request_error"
+		if status >= fiber.StatusInternalServerError {
+			code = "internal_error"
+			message = "Terjadi kesalahan pada server."
+		}
+		return WriteAPIError(c, status, code, message)
+	}
+}
+
 func RateLimitError(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{"error": APIError{Code: "rate_limited", Message: "Terlalu banyak permintaan. Silakan coba lagi nanti.", RequestID: requestID(c)}})
 }
 
 func WriteAPIError(c *fiber.Ctx, status int, code string, message string) error {
+	if status >= fiber.StatusInternalServerError {
+		monitoring.CaptureError(errors.New(message), requestID(c), c.Path())
+	}
 	return c.Status(status).JSON(fiber.Map{"error": APIError{Code: code, Message: message, RequestID: requestID(c)}})
 }
 

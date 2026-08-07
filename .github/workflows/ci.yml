@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, develop]
 
 permissions:
   contents: read
@@ -70,6 +70,15 @@ jobs:
           exit 1
       - name: Build production container
         run: docker build --tag sion-academy:ci .
+      - name: Prove PostgreSQL backup and restore
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+          export PGPASSWORD="$DB_PASSWORD"
+          pg_dump --host "$DB_HOST" --port "$DB_PORT" --username "$DB_USER" --format=custom --file /tmp/sion-ci.dump "$DB_NAME"
+          createdb --host "$DB_HOST" --port "$DB_PORT" --username "$DB_USER" sion_restore_ci
+          pg_restore --host "$DB_HOST" --port "$DB_PORT" --username "$DB_USER" --dbname sion_restore_ci --clean --if-exists --no-owner --no-privileges --exit-on-error /tmp/sion-ci.dump
+          psql --host "$DB_HOST" --port "$DB_PORT" --username "$DB_USER" --dbname sion_restore_ci --command "SELECT COUNT(*) FROM schema_migrations;"
 
   secret-scan:
     runs-on: ubuntu-latest

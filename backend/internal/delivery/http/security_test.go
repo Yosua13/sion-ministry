@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"testing"
 
@@ -40,5 +41,29 @@ func TestHealthUsesSecurityHeadersAndOriginAllowlist(t *testing.T) {
 	defer untrustedResponse.Body.Close()
 	if untrustedResponse.Header.Get("Access-Control-Allow-Origin") != "" {
 		t.Fatal("origin outside the allowlist must not receive CORS access")
+	}
+}
+
+func TestNormalizeErrorResponsesUsesStandardSchema(t *testing.T) {
+	app := fiber.New(fiber.Config{ErrorHandler: ErrorHandler})
+	app.Use(RequestID())
+	app.Use(NormalizeErrorResponses())
+	app.Get("/legacy-error", func(c *fiber.Ctx) error {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "database connection details"})
+	})
+
+	response, err := app.Test(httptest.NewRequest("GET", "/legacy-error", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var payload struct {
+		Error APIError `json:"error"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Error.Code != "internal_error" || payload.Error.Message != "Terjadi kesalahan pada server." || payload.Error.RequestID == "" {
+		t.Fatalf("legacy error was not normalized: %#v", payload.Error)
 	}
 }

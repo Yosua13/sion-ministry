@@ -24,6 +24,8 @@ dist/
 dist-ssr/
 .vite/
 *.log
+backups/
+*.dump
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -45,4 +47,3 @@ backend/server
 .antigravity/brain/**/logs/
 .antigravity/brain/**/scratch/
 .antigravity/brain/**/*.log
-

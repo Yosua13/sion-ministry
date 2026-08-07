@@ -1,22 +1,29 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"log"
 	"strings"
 
 	"backend/internal/models"
+	"backend/internal/objectstore"
 	"backend/internal/service"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 type Handlers struct {
-	services *service.Service
+	services    *service.Service
+	objectStore objectstore.Presigner
 }
 
-func NewHandlers(services *service.Service) *Handlers {
-	return &Handlers{services: services}
+func NewHandlers(services *service.Service, objectStores ...objectstore.Presigner) *Handlers {
+	var store objectstore.Presigner
+	if len(objectStores) > 0 {
+		store = objectStores[0]
+	}
+	return &Handlers{services: services, objectStore: store}
 }
 
 // Health Check
@@ -95,6 +102,35 @@ func (h *Handlers) LogoutAll(c *fiber.Ctx) error {
 		return WriteAPIError(c, fiber.StatusInternalServerError, "session_revocation_failed", "Gagal mencabut sesi.")
 	}
 	return c.JSON(fiber.Map{"success": true})
+}
+
+func (h *Handlers) PresignUpload(c *fiber.Ctx) error {
+	if h.objectStore == nil {
+		return WriteAPIError(c, fiber.StatusServiceUnavailable, "object_storage_unavailable", "Object storage belum dikonfigurasi.")
+	}
+	var input objectstore.PresignInput
+	if err := c.BodyParser(&input); err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Payload upload tidak valid.")
+	}
+	if _, err := objectstore.ValidateInput(input); err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_upload", err.Error())
+	}
+	request, err := h.objectStore.PresignUpload(context.Background(), input)
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusBadGateway, "object_storage_error", "Gagal membuat signed URL upload.")
+	}
+	return c.Status(fiber.StatusCreated).JSON(request)
+}
+
+func (h *Handlers) PresignDownload(c *fiber.Ctx) error {
+	if h.objectStore == nil {
+		return WriteAPIError(c, fiber.StatusServiceUnavailable, "object_storage_unavailable", "Object storage belum dikonfigurasi.")
+	}
+	request, err := h.objectStore.PresignDownload(context.Background(), c.Query("key"))
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_object_key", "Object key tidak valid.")
+	}
+	return c.JSON(request)
 }
 
 func (h *Handlers) GetUsers(c *fiber.Ctx) error {

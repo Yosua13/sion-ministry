@@ -24,6 +24,7 @@ func SetupRouter(app *fiber.App, handlers *Handlers, cfg *config.Config) {
 		AllowCredentials: false,
 		MaxAge:           86400,
 	}))
+	app.Use(NormalizeErrorResponses())
 
 	// API Endpoint Group
 	api := app.Group("/api")
@@ -48,6 +49,8 @@ func SetupRouter(app *fiber.App, handlers *Handlers, cfg *config.Config) {
 	// AI Assistant
 	protected.Post("/gemini/assistant", aiLimiter, handlers.AiAssistant)
 	protected.Get("/uploads/:filename", handlers.ServeUpload)
+	protected.Post("/uploads/presign", RequireRoles("admin", "pekerja"), uploadLimiter, handlers.PresignUpload)
+	protected.Get("/uploads/signed", RequireRoles("admin", "pekerja"), handlers.PresignDownload)
 
 	// Sync endpoint
 	protected.Post("/sync", handlers.Sync)

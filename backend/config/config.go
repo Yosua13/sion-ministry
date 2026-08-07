@@ -23,6 +23,13 @@ type Config struct {
 	UploadDir              string
 	BootstrapAdminEmail    string
 	BootstrapAdminPassword string
+	SentryDSN              string
+	S3Endpoint             string
+	S3Region               string
+	S3Bucket               string
+	S3Prefix               string
+	S3UsePathStyle         bool
+	SignedURLTTL           time.Duration
 }
 
 func LoadConfig() (*Config, error) {
@@ -54,6 +61,14 @@ func LoadConfig() (*Config, error) {
 	if err != nil || sessionTTL <= 0 || sessionTTL > 30*24*time.Hour {
 		return nil, fmt.Errorf("SESSION_TTL must be between 1ns and 720h")
 	}
+	signedURLTTL, err := time.ParseDuration(getEnv("S3_SIGNED_URL_TTL", "15m"))
+	if err != nil || signedURLTTL <= 0 || signedURLTTL > time.Hour {
+		return nil, fmt.Errorf("S3_SIGNED_URL_TTL must be between 1ns and 1h")
+	}
+	s3Bucket := strings.TrimSpace(os.Getenv("S3_BUCKET"))
+	if s3Bucket != "" && strings.TrimSpace(os.Getenv("S3_REGION")) == "" {
+		return nil, fmt.Errorf("S3_REGION must be set when S3_BUCKET is configured")
+	}
 
 	return &Config{
 		DBHost:                 os.Getenv("DB_HOST"),
@@ -69,6 +84,13 @@ func LoadConfig() (*Config, error) {
 		UploadDir:              getEnv("UPLOAD_DIR", "./uploads"),
 		BootstrapAdminEmail:    strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_EMAIL")),
 		BootstrapAdminPassword: os.Getenv("BOOTSTRAP_ADMIN_PASSWORD"),
+		SentryDSN:              strings.TrimSpace(os.Getenv("SENTRY_DSN")),
+		S3Endpoint:             strings.TrimSpace(os.Getenv("S3_ENDPOINT")),
+		S3Region:               strings.TrimSpace(os.Getenv("S3_REGION")),
+		S3Bucket:               s3Bucket,
+		S3Prefix:               strings.Trim(strings.TrimSpace(getEnv("S3_PREFIX", "uploads")), "/"),
+		S3UsePathStyle:         strings.EqualFold(getEnv("S3_USE_PATH_STYLE", "false"), "true"),
+		SignedURLTTL:           signedURLTTL,
 	}, nil
 }
 
