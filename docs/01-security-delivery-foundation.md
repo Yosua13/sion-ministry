@@ -23,13 +23,13 @@ Sistem memproses data anggota, jurnal, donasi, dan lamaran. Fondasi keamanan, up
 - [x] Tidak ada password, token, API key, atau akun default yang dapat digunakan dari repository/frontend.
 - [x] Alur login, register, approval, logout, expiry, dan revocation diuji untuk kondisi sukses maupun gagal.
 - [x] Origin di luar allowlist dan upload invalid ditolak; berkas tidak disimpan sebelum lolos validasi.
-- [ ] CI menjalankan lint, build, test, migrasi, dan security scan; pemblokiran merge masih perlu diaktifkan sebagai required status check di GitHub.
+- [x] CI menjalankan lint, build, test, migrasi, Docker build, backup/restore, dan security scan; `CI / validate` serta `CI / secret-scan` telah menjadi required status check pada `main`.
 - [ ] Backup dan restore database berhasil dibuktikan di staging.
 
 ## Definition of Done
 
 - [ ] Threat model, konfigurasi environment, dan daftar secret rotation disetujui.
 - [x] Konfigurasi keamanan terdokumentasi dan hanya memakai environment variable.
-- [x] Dockerfile dan Compose untuk membangun aplikasi dari clone bersih tersedia (perlu eksekusi pada runner/host dengan Docker daemon).
+- [x] Dockerfile dan Compose untuk membangun aplikasi dari clone bersih tersedia; Docker image juga diverifikasi CI.
 - [x] Automated negative test auth/upload tersedia; restore drill masih menunggu staging.
 - [ ] Tidak ada temuan security kritis/tinggi terbuka tanpa mitigasi yang diterima Product Owner.

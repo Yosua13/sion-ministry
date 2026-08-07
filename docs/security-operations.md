@@ -35,6 +35,10 @@ Jangan menandai kriteria penerimaan restore produksi selesai sebelum drill ini d
 
 Script PowerShell tersedia di `scripts/backup-postgres.ps1` dan `scripts/restore-postgres.ps1`. Restore selalu mensyaratkan flag `-AllowDestructiveRestore` agar tidak dilakukan tanpa konfirmasi eksplisit.
 
+## Menjalankan dengan Docker
+
+Salin `backend/.env.example` menjadi `backend/.env`, lalu isi paling tidak `DB_USER`, `DB_PASSWORD`, `DB_NAME`, dan `CORS_ALLOWED_ORIGINS`. Tidak ada nilai kredensial bawaan di Compose. Setelah Docker Desktop aktif, jalankan `docker compose --env-file backend/.env up --build`. API tersedia di `http://localhost:3000/api/health`; hentikan layanan dengan `docker compose --env-file backend/.env down`. Tambahkan `-v` hanya jika volume database lokal memang ingin dihapus.
+
 ## Checklist rotasi secret
 
 - Rotasi seluruh secret yang pernah digunakan pada environment prototype, termasuk password database, key Gemini, dan password bootstrap.
