@@ -27,6 +27,7 @@ type PresignInput struct {
 	ContentType string `json:"contentType"`
 	Size        int64  `json:"size"`
 	SHA256      string `json:"sha256"`
+	CityID      string `json:"cityId"`
 }
 
 type PresignedRequest struct {
@@ -79,6 +80,9 @@ func ValidateInput(input PresignInput) (string, error) {
 	if !checksumPattern.MatchString(input.SHA256) {
 		return "", errors.New("sha256 harus berupa checksum SHA-256 heksadesimal")
 	}
+	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`).MatchString(strings.TrimSpace(input.CityID)) {
+		return "", errors.New("cityId wajib diisi dan hanya boleh berisi huruf, angka, _ atau -")
+	}
 	return extension, nil
 }
 
@@ -87,7 +91,7 @@ func (s *s3Presigner) PresignUpload(ctx context.Context, input PresignInput) (*P
 	if err != nil {
 		return nil, err
 	}
-	objectKey := strings.Trim(s.prefix+"/"+input.SHA256+"."+extension, "/")
+	objectKey := strings.Trim(s.prefix+"/"+strings.TrimSpace(input.CityID)+"/"+input.SHA256+"."+extension, "/")
 	request, err := s.client.PresignPutObject(ctx, &s3.PutObjectInput{
 		Bucket:               aws.String(s.bucket),
 		Key:                  aws.String(objectKey),
@@ -100,6 +104,18 @@ func (s *s3Presigner) PresignUpload(ctx context.Context, input PresignInput) (*P
 		return nil, fmt.Errorf("presign S3 upload: %w", err)
 	}
 	return &PresignedRequest{ObjectKey: objectKey, URL: request.URL, Method: request.Method, Headers: request.SignedHeader, ExpiresAt: time.Now().Add(s.expiresIn)}, nil
+}
+
+func CityIDFromKey(objectKey string) (string, error) {
+	parts := strings.Split(strings.Trim(strings.TrimSpace(objectKey), "/"), "/")
+	if len(parts) < 2 {
+		return "", errors.New("object key tidak memiliki scope kota")
+	}
+	cityID := parts[len(parts)-2]
+	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`).MatchString(cityID) {
+		return "", errors.New("scope kota pada object key tidak valid")
+	}
+	return cityID, nil
 }
 
 func (s *s3Presigner) PresignDownload(ctx context.Context, objectKey string) (*PresignedRequest, error) {

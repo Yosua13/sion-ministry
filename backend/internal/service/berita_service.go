@@ -18,6 +18,10 @@ func (s *beritaService) GetAll() ([]models.BeritaAcara, error) {
 	return s.beritaRepo.GetAll()
 }
 
+func (s *beritaService) GetByID(id string) (*models.BeritaAcara, error) {
+	return s.beritaRepo.GetByID(id)
+}
+
 func (s *beritaService) Create(berita *models.BeritaAcara) error {
 	for i, img := range berita.Images {
 		newPath, err := saveBase64Image(img, "berita")

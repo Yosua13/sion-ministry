@@ -18,6 +18,10 @@ func (s *jurnalService) GetAll() ([]models.JurnalPA, error) {
 	return s.jurnalRepo.GetAll()
 }
 
+func (s *jurnalService) GetByID(id string) (*models.JurnalPA, error) {
+	return s.jurnalRepo.GetByID(id)
+}
+
 func (s *jurnalService) Create(jurnal *models.JurnalPA) error {
 	newPath, err := saveBase64Image(jurnal.Image, "jurnal")
 	if err != nil {
