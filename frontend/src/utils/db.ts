@@ -1,4 +1,4 @@
-import { Member, BeritaAcara, JurnalPA, DonationCampaign, DonationRecord, City, DiscipleshipLink, DiscipleshipModule, SyncPendingChange, SyncState, JobOpportunity, JobApplication, AuthRole, AuthSession, AuthUser } from "../types";
+import { Member, BeritaAcara, JurnalPA, DonationCampaign, DonationRecord, City, DiscipleshipLink, DiscipleshipModule, SyncPendingChange, SyncState, JobOpportunity, JobApplication, AuthRole, AuthSession, AuthUser, AccessContext, RoleAssignment, ScopeCatalog, AuditLog, DeviceSession } from "../types";
 import { initialCities, initialModules, initialMembers, initialBeritaAcara, initialJurnalPA, initialDonationCampaigns, initialLinks, initialJobs } from "../data/initialData";
 
 const STORAGE_KEYS = {
@@ -17,6 +17,10 @@ const STORAGE_KEYS = {
 };
 
 export class SionDatabase {
+  private static clearScopedOperationalData() {
+    [STORAGE_KEYS.CITIES, STORAGE_KEYS.MEMBERS, STORAGE_KEYS.BERITA, STORAGE_KEYS.JURNAL_PA, STORAGE_KEYS.DONATIONS, STORAGE_KEYS.APPLICATIONS].forEach((key) => localStorage.setItem(key, "[]"));
+  }
+
   private static async readApiError(response: Response): Promise<string> {
     try {
       const payload = await response.json();
@@ -132,6 +136,7 @@ export class SionDatabase {
 
   static async login(email: string, password: string): Promise<AuthSession> {
     this.init();
+    const previousUserId = this.getAuthSession()?.user.id;
     let response: Response;
     try {
       response = await fetch("/api/auth/login", {
@@ -146,6 +151,7 @@ export class SionDatabase {
       throw new Error(this.toUserFriendlyAuthError(await this.readApiError(response)));
     }
     const session = await response.json() as AuthSession;
+    if (previousUserId !== session.user.id) this.clearScopedOperationalData();
     localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, JSON.stringify(session));
     return session;
   }
@@ -197,9 +203,71 @@ export class SionDatabase {
     return await response.json() as AuthUser;
   }
 
+  private static async authenticatedJson<T>(url: string, init: RequestInit = {}): Promise<T> {
+    const token = this.getAuthToken();
+    if (!token) throw new Error("Sesi tidak ditemukan. Silakan masuk kembali.");
+    const response = await fetch(url, {
+      ...init,
+      headers: {
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...init.headers,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) throw new Error(await this.readApiError(response) || "Permintaan gagal diproses.");
+    if (response.status === 204) return undefined as T;
+    return await response.json() as T;
+  }
+
+  static getAccessContext(): Promise<AccessContext> {
+    return this.authenticatedJson<AccessContext>("/api/auth/access");
+  }
+
+  static getRoleAssignments(): Promise<RoleAssignment[]> {
+    return this.authenticatedJson<RoleAssignment[]>("/api/auth/role-assignments");
+  }
+
+  static createRoleAssignment(input: Pick<RoleAssignment, "userId" | "role" | "scopeType" | "scopeId"> & { validUntil?: string }): Promise<RoleAssignment> {
+    return this.authenticatedJson<RoleAssignment>("/api/auth/role-assignments", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  static approveRoleAssignment(id: string): Promise<RoleAssignment> {
+    return this.authenticatedJson<RoleAssignment>(`/api/auth/role-assignments/${id}/approve`, { method: "PUT" });
+  }
+
+  static revokeRoleAssignment(id: string): Promise<void> {
+    return this.authenticatedJson<void>(`/api/auth/role-assignments/${id}`, { method: "DELETE" });
+  }
+
+  static assignMentor(input: { memberId: string; mentorUserId: string; memberUserId?: string }): Promise<{ success: boolean }> {
+    return this.authenticatedJson<{ success: boolean }>("/api/auth/mentorships", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  static getScopedMembers(): Promise<Member[]> {
+    return this.authenticatedJson<Member[]>("/api/members");
+  }
+
+  static getScopeCatalog(): Promise<ScopeCatalog> {
+    return this.authenticatedJson<ScopeCatalog>("/api/auth/scopes");
+  }
+
+  static getAuditLogs(): Promise<AuditLog[]> {
+    return this.authenticatedJson<AuditLog[]>("/api/auth/audit-logs");
+  }
+
+  static getDeviceSessions(userId?: string): Promise<DeviceSession[]> {
+    const query = userId ? `?userId=${encodeURIComponent(userId)}` : "";
+    return this.authenticatedJson<DeviceSession[]>(`/api/auth/sessions${query}`);
+  }
+
+  static revokeDeviceSession(id: string): Promise<void> {
+    return this.authenticatedJson<void>(`/api/auth/sessions/${id}`, { method: "DELETE" });
+  }
+
   static logout() {
     const token = this.getAuthToken();
     localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
+    this.clearScopedOperationalData();
     if (token) {
       fetch("/api/auth/logout", {
         method: "POST",

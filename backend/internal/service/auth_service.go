@@ -42,6 +42,9 @@ func (s *authService) Register(name string, email string, password string, role 
 	if role != "pekerja" && role != "jemaat" {
 		return nil, errors.New("role tidak valid")
 	}
+	if role == "pekerja" && strings.TrimSpace(cityID) == "" {
+		return nil, errors.New("pekerja wajib memilih kota pelayanan")
+	}
 	if _, err := s.repo.GetUserByEmail(email); err == nil {
 		return nil, errors.New("email sudah terdaftar")
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -71,7 +74,7 @@ func (s *authService) Register(name string, email string, password string, role 
 	return user, nil
 }
 
-func (s *authService) Login(email string, password string) (*models.AuthResponse, error) {
+func (s *authService) Login(email string, password string, device ...string) (*models.AuthResponse, error) {
 	user, err := s.repo.GetUserByEmail(strings.ToLower(strings.TrimSpace(email)))
 	if err != nil {
 		return nil, errors.New("email atau password belum sesuai")
@@ -95,10 +98,21 @@ func (s *authService) Login(email string, password string) (*models.AuthResponse
 	}
 	expiresAt := time.Now().Add(s.sessionTTL).Format(time.RFC3339)
 	session := &models.AuthSession{
-		Token:     hashSessionToken(token),
-		UserID:    user.ID,
-		ExpiresAt: expiresAt,
-		CreatedAt: time.Now().Format(time.RFC3339),
+		ID:         "ses-" + uuid.NewString(),
+		Token:      hashSessionToken(token),
+		UserID:     user.ID,
+		ExpiresAt:  expiresAt,
+		CreatedAt:  time.Now().Format(time.RFC3339),
+		LastSeenAt: time.Now().Format(time.RFC3339),
+	}
+	if len(device) > 0 {
+		session.DeviceName = strings.TrimSpace(device[0])
+	}
+	if len(device) > 1 {
+		session.UserAgent = strings.TrimSpace(device[1])
+	}
+	if len(device) > 2 {
+		session.IPAddress = strings.TrimSpace(device[2])
 	}
 	if err := s.repo.CreateSession(session); err != nil {
 		return nil, err
@@ -117,6 +131,11 @@ func (s *authService) GetUserByToken(token string) (*models.User, error) {
 		_ = s.repo.DeleteSession(session.Token)
 		return nil, errors.New("session sudah berakhir")
 	}
+	if session.RevokedAt != "" {
+		return nil, errors.New("session sudah dicabut")
+	}
+	session.LastSeenAt = time.Now().Format(time.RFC3339)
+	_ = s.repo.UpdateSession(session)
 
 	user, err := s.repo.GetUserByID(session.UserID)
 	if err != nil {
@@ -129,11 +148,22 @@ func (s *authService) GetUserByToken(token string) (*models.User, error) {
 }
 
 func (s *authService) Logout(token string) error {
-	return s.repo.DeleteSession(hashSessionToken(token))
+	hashed := hashSessionToken(token)
+	session, _ := s.repo.GetSession(hashed)
+	if err := s.repo.DeleteSession(hashed); err != nil {
+		return err
+	}
+	if session != nil {
+		return s.repo.CreateAuditLog(newAuditLog(session.UserID, "session.revoked", "auth_session", session.ID, "self", session.UserID, "success", "", "", map[string]any{"currentDevice": true}))
+	}
+	return nil
 }
 
 func (s *authService) LogoutAll(userID string) error {
-	return s.repo.DeleteSessionsByUser(userID)
+	if err := s.repo.DeleteSessionsByUser(userID); err != nil {
+		return err
+	}
+	return s.repo.CreateAuditLog(newAuditLog(userID, "session.revoked_all", "auth_session", "", "self", userID, "success", "", "", map[string]any{"allDevices": true}))
 }
 
 // EnsureBootstrapAdmin supports the one-time creation of the first administrator.
@@ -159,7 +189,7 @@ func (s *authService) EnsureBootstrapAdmin(email string, password string) error 
 	if err != nil {
 		return err
 	}
-	return s.repo.CreateUser(&models.User{
+	user := &models.User{
 		ID:           "usr-" + uuid.NewString(),
 		Name:         "Bootstrap Administrator",
 		Email:        email,
@@ -168,21 +198,49 @@ func (s *authService) EnsureBootstrapAdmin(email string, password string) error 
 		Status:       "active",
 		CreatedAt:    time.Now().Format(time.RFC3339),
 		ApprovedAt:   time.Now().Format(time.RFC3339),
-	})
+	}
+	now := time.Now().Format(time.RFC3339)
+	assignment := &models.RoleAssignment{
+		ID: "ra-" + uuid.NewString(), UserID: user.ID, Role: "admin", ScopeType: "organization",
+		ScopeID: "org-sion-ministry", Status: "active", ValidFrom: now, ApprovedBy: stringPointer(user.ID), ApprovedAt: &now, CreatedAt: now,
+	}
+	return s.repo.CreateUserWithAssignment(user, assignment)
 }
 
 func (s *authService) GetUsers() ([]models.User, error) {
 	return s.repo.GetUsers()
 }
 
-func (s *authService) ApproveUser(id string) (*models.User, error) {
+func (s *authService) ApproveUser(id string, actorIDs ...string) (*models.User, error) {
 	user, err := s.repo.GetUserByID(id)
 	if err != nil {
 		return nil, err
 	}
+	if user.Status != "pending" {
+		return nil, errors.New("hanya akun pending yang dapat disetujui")
+	}
 	user.Status = "active"
-	user.ApprovedAt = time.Now().Format(time.RFC3339)
-	if err := s.repo.UpdateUser(user); err != nil {
+	now := time.Now().Format(time.RFC3339)
+	user.ApprovedAt = now
+	actorID := ""
+	if len(actorIDs) > 0 {
+		actorID = strings.TrimSpace(actorIDs[0])
+	}
+	scopeType, scopeID := "self", user.ID
+	if user.Role == "admin" {
+		scopeType, scopeID = "organization", "org-sion-ministry"
+	} else if user.Role == "pekerja" {
+		if user.CityID == nil || *user.CityID == "" {
+			return nil, errors.New("pekerja belum memiliki kota pelayanan")
+		}
+		scopeType, scopeID = "city", *user.CityID
+	}
+	assignment := &models.RoleAssignment{
+		ID: "ra-" + uuid.NewString(), UserID: user.ID, Role: user.Role, ScopeType: scopeType,
+		ScopeID: scopeID, Status: "active", ValidFrom: now, ApprovedBy: stringPointer(actorID), ApprovedAt: &now, CreatedAt: now,
+	}
+	audit := newAuditLog(actorID, "user.approved", "user", user.ID, scopeType, scopeID, "success", "", "", map[string]any{"role": user.Role})
+	if err := s.repo.ApproveUserWithAssignment(user, assignment, audit); err != nil {
 		return nil, err
 	}
 	return user, nil

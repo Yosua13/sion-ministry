@@ -11,7 +11,9 @@ type DonationRepository interface {
 	CreateCampaign(campaign *models.DonationCampaign) error
 	UpdateCampaign(campaign *models.DonationCampaign) error
 	GetAllRecords() ([]models.DonationRecord, error)
+	GetRecordByID(id string) (*models.DonationRecord, error)
 	CreateRecord(record *models.DonationRecord) error
+	UpdateRecord(record *models.DonationRecord) error
 }
 
 type donationRepository struct {
@@ -49,6 +51,18 @@ func (r *donationRepository) GetAllRecords() ([]models.DonationRecord, error) {
 	var records []models.DonationRecord
 	err := r.db.Find(&records).Error
 	return records, err
+}
+
+func (r *donationRepository) GetRecordByID(id string) (*models.DonationRecord, error) {
+	var record models.DonationRecord
+	if err := r.db.First(&record, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &record, nil
+}
+
+func (r *donationRepository) UpdateRecord(record *models.DonationRecord) error {
+	return r.db.Save(record).Error
 }
 
 func (r *donationRepository) CreateRecord(record *models.DonationRecord) error {
