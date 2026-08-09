@@ -48,6 +48,8 @@ Endpoint utama:
 
 Migration `000005_add_scoped_rbac.up.sql` dan rollback `000005_add_scoped_rbac.down.sql` mencakup hierarchy, assignment, permission, audit, session device, relasi mentor/mentee, attendance, serta scope donasi dan lamaran. Integration test menggunakan PostgreSQL terisolasi dan membuktikan cross-city denial, self access, assigned mentor, unassigned mentor denial, serta default-deny tanpa assignment.
 
+Panduan eksekusi UAT, data uji, expected result, pengujian API langsung, dan lembar persetujuan tersedia di [Panduan Manual Testing Scoped RBAC dan Multi-Kota](testing-scoped-rbac-multi-kota.md).
+
 ## Mengapa
 
 Role global `admin`, `pekerja`, dan `jemaat` belum mencegah akses data lintas kota atau jurnal sensitif. Role menentukan aksi; scope menentukan record mana yang boleh diakses. Keduanya wajib diterapkan pada backend.
