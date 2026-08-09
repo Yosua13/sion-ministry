@@ -15,6 +15,10 @@ Folder ini memecah rencana implementasi menjadi issue GitHub mandiri. Buat satu 
 | 9 | [Verifikasi donasi dan rekonsiliasi](09-donation-verification-reconciliation.md) | P1 | Fase 4 | Issue 1, 2, 6 |
 | 10 | [Migrasi data dan pilot rollout](10-data-migration-pilot-rollout.md) | P1 | Fase 2 | Issue 1-6 |
 
+## Panduan Testing
+
+- [Manual testing scoped RBAC dan multi-kota](testing-scoped-rbac-multi-kota.md) — checklist UAT issue #9, termasuk isolasi lintas kota, jurnal mentor/mentee, sesi, audit, storage, serta rollback migrasi.
+
 ## Aturan Penutupan Issue
 
 Issue hanya ditutup setelah seluruh checklist DoD selesai, test terkait lulus di CI, perubahan diverifikasi pada staging, dan Product Owner menerima demo. Perubahan yang menyentuh data pribadi wajib melalui review policy akses dan tidak boleh mengandalkan penyembunyian menu frontend sebagai pengaman.
