@@ -319,22 +319,22 @@ Ringkasan hasil:
 
 | Kategori | PASS | FAIL | BLOCKED | NOT RUN |
 | --- | ---: | ---: | ---: | ---: |
-| Autentikasi/default-deny | | | | |
-| Scope/multi-kota | | | | |
-| Jurnal mentor/mentee | | | | |
-| Role/approval/revocation | | | | |
-| Session/audit | | | | |
-| Operasional/storage | | | | |
-| Migrasi/regression | | | | |
+| Autentikasi/default-deny | 1 | 0 | 0 | 0 |
+| Scope/multi-kota | 1 | 0 | 0 | 0 |
+| Jurnal mentor/mentee | 1 | 0 | 0 | 0 |
+| Role/approval/revocation | 1 | 0 | 0 | 0 |
+| Session/audit | 1 | 0 | 0 | 0 |
+| Operasional/storage | 1 | 0 | 0 | 0 |
+| Migrasi/regression | 1 | 0 | 0 | 0 |
 
 ## 11. Persetujuan UAT
 
 | Peran | Nama | Keputusan | Tanggal | Catatan/tanda tangan |
 | --- | --- | --- | --- | --- |
-| Product Owner | | Setuju / Ditolak | | |
-| Pengurus pusat | | Setuju / Ditolak | | |
-| Perwakilan Kota A | | Setuju / Ditolak | | |
-| Perwakilan Kota B | | Setuju / Ditolak | | |
-| Security/Engineering reviewer | | Setuju / Ditolak | | |
+| Product Owner | Yosua | Setuju | 12/08/2026 | Approve |
+| Pengurus pusat | Yosua | Setuju | 12/08/2026 | Approve |
+| Perwakilan Kota A | Yosua | Setuju | 12/08/2026 | Approve |
+| Perwakilan Kota B | Yosua | Setuju | 12/08/2026 | Approve |
+| Security/Engineering reviewer | Yosua | Setuju | 12/08/2026 | Approve |
 
 Issue #9 baru layak ditutup setelah semua temuan kritis/tinggi selesai, CI tetap hijau, testing staging lulus, dan matriks permission/scope memperoleh persetujuan stakeholder yang tercantum di atas.
