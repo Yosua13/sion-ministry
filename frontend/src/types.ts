@@ -11,6 +11,18 @@ export interface DiscipleshipModule {
   isCompleted?: boolean;
 }
 
+export interface Province {
+  id: string;
+  name: string;
+}
+
+export interface LocationCity {
+  id: string;
+  name: string;
+  provinceId: string;
+  provinceName: string;
+}
+
 export type AuthRole = "admin" | "pekerja" | "jemaat";
 
 export type AuthStatus = "active" | "pending" | "disabled";

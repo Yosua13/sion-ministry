@@ -251,6 +251,20 @@ export class SionDatabase {
     return this.authenticatedJson<ScopeCatalog>("/api/auth/scopes");
   }
 
+  static getProvinces(query?: string): Promise<{ id: string; name: string }[]> {
+    const url = query && query.trim().length > 0
+      ? `/api/reference/provinces?q=${encodeURIComponent(query.trim())}`
+      : "/api/reference/provinces";
+    return this.authenticatedJson<{ id: string; name: string }[]>(url);
+  }
+
+  static getCitiesByProvince(province: string, query?: string): Promise<{ id: string; name: string; provinceId: string; provinceName: string }[]> {
+    const params = new URLSearchParams();
+    if (province) params.append("province", province.trim());
+    if (query && query.trim().length > 0) params.append("q", query.trim());
+    return this.authenticatedJson<{ id: string; name: string; provinceId: string; provinceName: string }[]>(`/api/reference/cities?${params.toString()}`);
+  }
+
   static getAuditLogs(): Promise<AuditLog[]> {
     return this.authenticatedJson<AuditLog[]>("/api/auth/audit-logs");
   }
