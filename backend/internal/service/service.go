@@ -117,4 +117,5 @@ type Service struct {
 	AI       AIService
 	Sync     SyncService
 	Access   AccessService
+	Location LocationService
 }
