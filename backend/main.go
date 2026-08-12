@@ -47,6 +47,8 @@ func main() {
 	jobRepo := repository.NewJobRepository(db)
 	moduleRepo := repository.NewModuleRepository(db)
 
+	locationRepo := repository.NewLocationRepository()
+
 	// 4. Initialize Services
 	authService := service.NewAuthService(authRepo, cfg.SessionTTL)
 	accessService := service.NewAccessService(db)
@@ -67,6 +69,7 @@ func main() {
 	moduleService := service.NewModuleService(moduleRepo)
 	aiService := service.NewAIService(cfg)
 	syncService := service.NewSyncService(db, cityRepo, memberRepo, beritaRepo, jurnalRepo, linkRepo)
+	locationService := service.NewLocationService(locationRepo)
 
 	services := &service.Service{
 		Auth:     authService,
@@ -81,6 +84,7 @@ func main() {
 		AI:       aiService,
 		Sync:     syncService,
 		Access:   accessService,
+		Location: locationService,
 	}
 
 	// 5. Initialize Handlers

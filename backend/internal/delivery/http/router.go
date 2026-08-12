@@ -68,6 +68,8 @@ func SetupRouter(app *fiber.App, handlers *Handlers, cfg *config.Config) {
 	// Cities
 	protected.Get("/cities", handlers.RequirePermission("city.read"), handlers.GetCities)
 	protected.Post("/cities", handlers.RequirePermission("city.manage"), handlers.CreateCity)
+	protected.Get("/reference/provinces", handlers.RequirePermission("city.read"), handlers.GetProvinces)
+	protected.Get("/reference/cities", handlers.RequirePermission("city.read"), handlers.GetCitiesByProvince)
 
 	// Members
 	protected.Get("/members", handlers.RequirePermission("member.read"), handlers.GetMembers)

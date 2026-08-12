@@ -341,6 +341,26 @@ func (h *Handlers) CreateCity(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(city)
 }
 
+// Location Reference Handlers
+func (h *Handlers) GetProvinces(c *fiber.Ctx) error {
+	query := c.Query("q")
+	provinces, err := h.services.Location.GetProvinces(query)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(provinces)
+}
+
+func (h *Handlers) GetCitiesByProvince(c *fiber.Ctx) error {
+	province := c.Query("province")
+	query := c.Query("q")
+	cities, err := h.services.Location.GetCitiesByProvince(province, query)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(cities)
+}
+
 // Members Handlers
 func (h *Handlers) GetMembers(c *fiber.Ctx) error {
 	members, err := h.services.Member.GetAll()
