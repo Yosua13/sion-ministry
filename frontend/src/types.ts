@@ -190,7 +190,7 @@ export interface City {
   name: string;
   region: string;
   reachedDate: string;
-  workersCount: number;
+  workersCount?: number;
   membersCount: number;
   journalsCount: number;
   beritaCount?: number;
