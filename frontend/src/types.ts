@@ -113,15 +113,80 @@ export interface AuditLog {
 export interface Member {
   id: string;
   name: string;
+  email?: string;
   cityId: string;
   cityName: string;
+  primaryServicePointId?: string;
   phone: string;
   discipleshipStage: "Pekerja" | "Jemaat";
   mentorName: string;
+  groupName?: string;
   joinedDate: string;
-  status: "active" | "inactive";
+  joinedOn?: string;
+  status: "guest" | "prospect" | "active" | "inactive" | "moved" | "deceased" | "archived";
   userId?: string;
   mentorUserId?: string;
+  ownerUserId?: string;
+  version?: number;
+  consentStatus?: "unknown" | "granted" | "revoked";
+  consentSource?: string;
+  consentPurpose?: string;
+  consentRecordedAt?: string;
+  communicationPreferences?: Array<"whatsapp" | "sms" | "email" | "phone" | "none">;
+  archivedAt?: string;
+  archiveReason?: string;
+  retentionUntil?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  duplicateOverrideReason?: string;
+}
+
+export interface MemberDuplicateCandidate {
+  id: string;
+  name: string;
+  cityId: string;
+  cityName: string;
+  maskedPhone: string;
+  maskedEmail: string;
+  matchReasons: Array<"phone" | "email" | "name_city">;
+  score: number;
+}
+
+export interface MemberListResult {
+  items: Member[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface MemberHistory {
+  id: string;
+  memberId: string;
+  actorUserId?: string;
+  changeType: string;
+  fieldName: string;
+  oldValue: string;
+  newValue: string;
+  reason: string;
+  createdAt: string;
+}
+
+export interface MemberConsentHistory {
+  id: string;
+  memberId: string;
+  actorUserId?: string;
+  consentStatus: "unknown" | "granted" | "revoked";
+  communicationPreferences: string[];
+  source: string;
+  purpose: string;
+  recordedAt: string;
+  createdAt: string;
+}
+
+export interface MemberHistoryResult {
+  changes: MemberHistory[];
+  consents: MemberConsentHistory[];
 }
 
 export interface City {
