@@ -23,9 +23,9 @@ export interface LocationCity {
   provinceName: string;
 }
 
-export type AuthRole = "admin" | "pekerja" | "jemaat";
+export type AuthRole = "admin" | "pekerja" | "mentor" | "jemaat" | "content_publisher" | "auditor" | "donation_verifier";
 
-export type AuthStatus = "active" | "pending" | "disabled";
+export type AuthStatus = "active" | "invited" | "disabled";
 
 export interface AuthUser {
   id: string;
@@ -36,17 +36,16 @@ export interface AuthUser {
   cityId?: string;
   cityName?: string;
   createdAt: string;
-  approvedAt?: string;
+  activatedAt?: string;
 }
 
 export interface AuthSession {
-  token: string;
   user: AuthUser;
   expiresAt: string;
 }
 
-export type ScopedRole = AuthRole | "mentor" | "content_publisher" | "auditor" | "donation_verifier";
-export type ScopeType = "organization" | "ministry_unit" | "region" | "city" | "self";
+export type ScopedRole = AuthRole;
+export type ScopeType = "global" | "city";
 
 export interface RoleAssignment {
   id: string;
@@ -78,9 +77,6 @@ export interface ScopeOption {
 }
 
 export interface ScopeCatalog {
-  organizations: ScopeOption[];
-  ministryUnits: Array<ScopeOption & { organizationId: string }>;
-  regions: Array<ScopeOption & { ministryUnitId: string }>;
   cities: City[];
 }
 

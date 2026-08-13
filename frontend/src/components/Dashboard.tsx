@@ -44,7 +44,6 @@ export default function Dashboard({
   const [newCityName, setNewCityName] = useState("");
   const [newCityRegion, setNewCityRegion] = useState("");
   const [newCityReachedDate, setNewCityReachedDate] = useState("");
-  const [newCityWorkersCount, setNewCityWorkersCount] = useState(1);
   const [cityFormErrors, setCityFormErrors] = useState<Record<string, string>>({});
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
 
@@ -89,7 +88,6 @@ export default function Dashboard({
       name: newCityName,
       region: newCityRegion,
       reachedDate: newCityReachedDate,
-      workersCount: newCityWorkersCount,
     });
 
     setCityFormErrors({});
@@ -99,7 +97,6 @@ export default function Dashboard({
     setNewCityName("");
     setNewCityRegion("");
     setNewCityReachedDate("");
-    setNewCityWorkersCount(1);
 
     // Show success banner
     setShowSuccessAlert(true);
@@ -475,17 +472,6 @@ export default function Dashboard({
                 )}
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Jumlah Pekerja</label>
-                <input 
-                  type="number" 
-                  min="0"
-                  placeholder="Contoh: 3"
-                  value={newCityWorkersCount}
-                  onChange={(e) => setNewCityWorkersCount(Number(e.target.value))}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
-                />
-              </div>
             </div>
 
             <div className="flex space-x-2 mt-6">

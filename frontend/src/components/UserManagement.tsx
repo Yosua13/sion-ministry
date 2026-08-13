@@ -4,8 +4,6 @@ import { AuditLog, AuthUser, DeviceSession, Member, RoleAssignment, ScopeCatalog
 import { SionDatabase } from "../utils/db";
 
 const roles: ScopedRole[] = ["admin", "pekerja", "mentor", "jemaat", "content_publisher", "auditor", "donation_verifier"];
-const scopeTypes: ScopeType[] = ["organization", "ministry_unit", "region", "city", "self"];
-
 export default function UserManagement() {
   const [users, setUsers] = useState<AuthUser[]>([]);
   const [assignments, setAssignments] = useState<RoleAssignment[]>([]);
@@ -18,13 +16,13 @@ export default function UserManagement() {
   const [message, setMessage] = useState<string | null>(null);
   const [form, setForm] = useState({ userId: "", role: "pekerja" as ScopedRole, scopeType: "city" as ScopeType, scopeId: "", validUntil: "" });
   const [sessionUserId, setSessionUserId] = useState("");
-  const [mentorForm, setMentorForm] = useState({ memberId: "", mentorUserId: "", memberUserId: "" });
+  const [mentorForm, setMentorForm] = useState({ memberId: "", mentorUserId: "" });
 
   const userNames = useMemo(() => Object.fromEntries(users.map((user) => [user.id, user.name])), [users]);
   const stats = useMemo(() => ({
     total: users.length,
     active: users.filter((user) => user.status === "active").length,
-    pending: users.filter((user) => user.status === "pending").length,
+    pending: users.filter((user) => user.status === "invited").length,
   }), [users]);
 
   const loadAdminData = async () => {
@@ -34,17 +32,21 @@ export default function UserManagement() {
       const [nextUsers, nextAssignments, nextCatalog, nextAudit, nextMembers] = await Promise.all([
         SionDatabase.getAuthUsers(), SionDatabase.getRoleAssignments(), SionDatabase.getScopeCatalog(), SionDatabase.getAuditLogs(), SionDatabase.getScopedMembers(),
       ]);
-      setUsers(nextUsers);
+      const roleByUser = new Map<string, ScopedRole>();
+      nextAssignments.filter((assignment) => assignment.status === "active").forEach((assignment) => {
+        if (!roleByUser.has(assignment.userId)) roleByUser.set(assignment.userId, assignment.role);
+      });
+      const usersWithRole = nextUsers.map((user) => ({ ...user, role: roleByUser.get(user.id) || "jemaat" }));
+      setUsers(usersWithRole);
       setAssignments(nextAssignments);
       setCatalog(nextCatalog);
-      setForm((current) => ({ ...current, userId: current.userId || nextUsers[0]?.id || "" }));
-      setSessionUserId((current) => current || nextUsers[0]?.id || "");
+      setForm((current) => ({ ...current, userId: current.userId || usersWithRole[0]?.id || "" }));
+      setSessionUserId((current) => current || usersWithRole[0]?.id || "");
       setAuditLogs(nextAudit);
       setMembers(nextMembers);
       setMentorForm((current) => ({
         memberId: current.memberId || nextMembers[0]?.id || "",
-        mentorUserId: current.mentorUserId || nextUsers.find((user) => user.role === "pekerja" && user.status === "active")?.id || "",
-        memberUserId: current.memberUserId,
+        mentorUserId: current.mentorUserId || usersWithRole.find((user) => user.role === "pekerja" && user.status === "active")?.id || "",
       }));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Gagal memuat kontrol akses.");
@@ -61,11 +63,7 @@ export default function UserManagement() {
 
   const scopeOptions = useMemo(() => {
     if (!catalog) return [];
-    if (form.scopeType === "organization") return catalog.organizations;
-    if (form.scopeType === "ministry_unit") return catalog.ministryUnits;
-    if (form.scopeType === "region") return catalog.regions;
-    if (form.scopeType === "city") return catalog.cities;
-    return users.filter((user) => user.id === form.userId).map((user) => ({ id: user.id, name: user.name }));
+    return catalog.cities;
   }, [catalog, form.scopeType, form.userId, users]);
 
   useEffect(() => {
@@ -90,11 +88,11 @@ export default function UserManagement() {
 
   const handleCreateAssignment = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!form.userId || !form.scopeId) return setMessage("User dan scope wajib dipilih.");
+    if (!form.userId || (form.role !== "admin" && !form.scopeId)) return setMessage("User dan kota wajib dipilih.");
     await runAction("new-assignment", () => SionDatabase.createRoleAssignment({
       userId: form.userId, role: form.role, scopeType: form.scopeType, scopeId: form.scopeId,
       validUntil: form.validUntil ? new Date(form.validUntil).toISOString() : undefined,
-    }), "Role assignment dibuat dan menunggu persetujuan.");
+    }), "Role kota berhasil diberikan.");
   };
 
   const handleAssignMentor = async (event: React.FormEvent) => {
@@ -105,7 +103,7 @@ export default function UserManagement() {
 
   const statusClass = (status: string) => {
     if (status === "active") return "bg-emerald-50 text-emerald-700 border-emerald-200";
-    if (status === "pending") return "bg-amber-50 text-amber-700 border-amber-200";
+    if (status === "invited") return "bg-amber-50 text-amber-700 border-amber-200";
     return "bg-slate-100 text-slate-600 border-slate-200";
   };
 
@@ -116,7 +114,7 @@ export default function UserManagement() {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-600"><ShieldCheck className="h-3.5 w-3.5" />Admin Access</div>
             <h2 className="mt-3 text-xl font-bold text-slate-950">Role, Scope, Perangkat & Audit</h2>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">Role menentukan aksi; scope menentukan organisasi, unit, region, atau kota yang boleh diakses.</p>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">Role menentukan aksi; scope akses hanya berdasarkan kota. Admin berscope global.</p>
           </div>
           <button onClick={loadAdminData} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50"><RefreshCw className="h-4 w-4" />Muat Ulang</button>
         </div>
@@ -124,7 +122,7 @@ export default function UserManagement() {
           {[
             [UsersRound, stats.total, "Total Akun", "border-slate-200 bg-slate-50", "text-slate-600"],
             [UserCheck, stats.active, "Aktif", "border-emerald-200 bg-emerald-50", "text-emerald-600"],
-            [Clock3, stats.pending, "Menunggu Approval", "border-amber-200 bg-amber-50", "text-amber-600"],
+            [Clock3, stats.pending, "Menunggu Aktivasi", "border-amber-200 bg-amber-50", "text-amber-600"],
           ].map(([Icon, value, label, cardClass, iconClass]: any) => (
             <div key={label} className={`rounded-2xl border p-4 ${cardClass}`}><Icon className={`h-5 w-5 ${iconClass}`} /><p className="mt-3 text-2xl font-bold text-slate-950">{value}</p><p className="text-xs font-semibold text-slate-500">{label}</p></div>
           ))}
@@ -134,13 +132,13 @@ export default function UserManagement() {
       {message && <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm">{message}</div>}
 
       <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-6 py-4"><h3 className="text-sm font-bold text-slate-900">Persetujuan Akun</h3></div>
+        <div className="border-b border-slate-100 px-6 py-4"><h3 className="text-sm font-bold text-slate-900">Undangan Akun</h3></div>
         {isLoading ? <div className="p-8 text-center text-sm font-semibold text-slate-500">Memuat kontrol akses...</div> : (
           <div className="divide-y divide-slate-100">
             {users.map((user) => (
               <div key={user.id} className="grid gap-4 p-5 md:grid-cols-[1fr_auto] md:items-center">
                 <div><div className="flex flex-wrap items-center gap-2"><p className="font-bold text-slate-950">{user.name}</p><span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${statusClass(user.status)}`}>{user.status}</span><span className="rounded-full border border-slate-200 px-2.5 py-0.5 text-[11px] font-bold text-slate-600">{user.role}</span></div><p className="mt-1 text-sm text-slate-500">{user.email}</p><p className="mt-1 text-xs text-slate-400">{user.cityName || "Kota belum dipilih"}</p></div>
-                {user.status === "pending" && <button disabled={busyId === user.id} onClick={() => runAction(user.id, () => SionDatabase.approveUser(user.id), "Akun dan scope awal berhasil diaktifkan.")} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white disabled:bg-slate-300"><CheckCircle2 className="h-4 w-4" />Setujui Akun</button>}
+                {user.status === "invited" && <button disabled={busyId === user.id} onClick={() => runAction(user.id, () => SionDatabase.resendInvitation(user.id), import.meta.env.DEV ? "Undangan diperbarui. Jika SMTP belum lengkap, tautan aktivasi hanya dicatat pada terminal backend." : "Undangan aktivasi baru berhasil dikirim.")} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white disabled:bg-slate-300"><CheckCircle2 className="h-4 w-4" />Kirim Ulang Undangan</button>}
               </div>
             ))}
           </div>
@@ -150,14 +148,12 @@ export default function UserManagement() {
       <section className="grid gap-6 xl:grid-cols-[360px_1fr]">
         <div className="space-y-6">
         <form onSubmit={handleCreateAssignment} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900"><Plus className="h-4 w-4" />Assignment Baru</h3>
+          <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900"><Plus className="h-4 w-4" />Role Kota Baru</h3>
           <div className="mt-4 space-y-3">
             <label className="block text-xs font-bold text-slate-600">User<select value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-sm">{users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
             <label className="block text-xs font-bold text-slate-600">Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as ScopedRole })} className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-sm">{roles.map((role) => <option key={role}>{role}</option>)}</select></label>
-            <label className="block text-xs font-bold text-slate-600">Jenis Scope<select value={form.scopeType} onChange={(e) => setForm({ ...form, scopeType: e.target.value as ScopeType })} className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-sm">{scopeTypes.map((scope) => <option key={scope}>{scope}</option>)}</select></label>
-            <label className="block text-xs font-bold text-slate-600">Scope<select value={form.scopeId} onChange={(e) => setForm({ ...form, scopeId: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-sm">{scopeOptions.map((scope) => <option key={scope.id} value={scope.id}>{scope.name}</option>)}</select></label>
-            <label className="block text-xs font-bold text-slate-600">Berlaku sampai (opsional)<input type="datetime-local" value={form.validUntil} onChange={(e) => setForm({ ...form, validUntil: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-sm" /></label>
-            <button disabled={busyId === "new-assignment"} className="w-full rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white disabled:bg-slate-400">Buat Assignment</button>
+            {form.role !== "admin" && <label className="block text-xs font-bold text-slate-600">Kota<select value={form.scopeId} onChange={(e) => setForm({ ...form, scopeId: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-sm">{scopeOptions.map((scope) => <option key={scope.id} value={scope.id}>{scope.name}</option>)}</select></label>}
+            <button disabled={busyId === "new-assignment"} className="w-full rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white disabled:bg-slate-400">Berikan Role</button>
           </div>
         </form>
 
@@ -167,19 +163,18 @@ export default function UserManagement() {
           <div className="mt-4 space-y-3">
             <label className="block text-xs font-bold text-slate-600">Data Anggota<select value={mentorForm.memberId} onChange={(e) => setMentorForm({ ...mentorForm, memberId: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-sm">{members.map((member) => <option key={member.id} value={member.id}>{member.name} · {member.cityName}</option>)}</select></label>
             <label className="block text-xs font-bold text-slate-600">Akun Mentor<select value={mentorForm.mentorUserId} onChange={(e) => setMentorForm({ ...mentorForm, mentorUserId: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-sm">{users.filter((user) => user.status === "active" && (user.role === "pekerja" || user.role === "admin")).map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
-            <label className="block text-xs font-bold text-slate-600">Akun Mentee (opsional)<select value={mentorForm.memberUserId} onChange={(e) => setMentorForm({ ...mentorForm, memberUserId: e.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-sm"><option value="">Belum ditautkan</option>{users.filter((user) => user.status === "active" && user.role === "jemaat").map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
             <button disabled={busyId === "mentorship"} className="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white disabled:bg-slate-400">Simpan Relasi</button>
           </div>
         </form>
         </div>
 
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 px-5 py-4"><h3 className="text-sm font-bold text-slate-900">Role Assignment</h3></div>
+          <div className="border-b border-slate-100 px-5 py-4"><h3 className="text-sm font-bold text-slate-900">Role Aktif</h3></div>
           <div className="divide-y divide-slate-100">
             {assignments.map((assignment) => (
               <div key={assignment.id} className="grid gap-3 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
                 <div><p className="text-sm font-bold text-slate-900">{userNames[assignment.userId] || assignment.userId} · {assignment.role}</p><p className="mt-1 text-xs text-slate-500">{assignment.scopeType}: {assignment.scopeId}</p><span className={`mt-2 inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusClass(assignment.status)}`}>{assignment.status}</span></div>
-                <div className="flex gap-2">{assignment.status === "pending" && <button onClick={() => runAction(assignment.id, () => SionDatabase.approveRoleAssignment(assignment.id), "Assignment berhasil disetujui.")} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white">Setujui</button>}{assignment.status === "active" && <button onClick={() => runAction(assignment.id, () => SionDatabase.revokeRoleAssignment(assignment.id), "Assignment dan sesi terkait berhasil dicabut.")} className="inline-flex items-center gap-1 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-700"><Ban className="h-3.5 w-3.5" />Cabut</button>}</div>
+                <div className="flex gap-2"><button onClick={() => runAction(assignment.id, () => SionDatabase.revokeRoleAssignment(assignment.id), "Role dan sesi terkait berhasil dicabut.")} className="inline-flex items-center gap-1 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-700"><Ban className="h-3.5 w-3.5" />Cabut</button></div>
               </div>
             ))}
           </div>

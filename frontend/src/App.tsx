@@ -3,6 +3,7 @@ import { SionDatabase } from "./utils/db";
 import { AuthSession, City, Member, BeritaAcara, JurnalPA, DonationCampaign, DonationRecord, DiscipleshipLink, DiscipleshipModule, SyncState } from "./types";
 import Sidebar, { SionLogo } from "./components/Sidebar";
 import AuthScreen from "./components/AuthScreen";
+import ActivationScreen from "./components/ActivationScreen";
 import Dashboard from "./components/Dashboard";
 import Modules from "./components/Modules";
 import Members from "./components/Members";
@@ -67,7 +68,11 @@ export default function App() {
   const roleAllowedTabs: Record<AuthSession["user"]["role"], string[]> = {
     admin: ["dashboard", "modules", "members", "berita", "jurnal_pa", "donasi", "links", "pekerjaan", "ai", "users"],
     pekerja: ["home", "modules", "members", "berita", "jurnal_pa", "donasi", "links", "pekerjaan", "ai"],
+    mentor: ["home", "modules", "members", "berita", "jurnal_pa", "donasi", "links", "pekerjaan", "ai"],
     jemaat: ["home", "modules", "berita", "jurnal_pa", "donasi", "links", "pekerjaan", "ai"],
+    content_publisher: ["home", "modules", "berita", "donasi", "links", "pekerjaan"],
+    auditor: ["home", "members", "berita", "jurnal_pa", "donasi", "links"],
+    donation_verifier: ["home", "donasi"],
   };
 
   const getDefaultTabForRole = (session: AuthSession | null) => {
@@ -135,8 +140,8 @@ export default function App() {
 
   useEffect(() => {
     SionDatabase.init();
-    setAuthSession(SionDatabase.getAuthSession());
     refreshData();
+    SionDatabase.restoreAuthSession().then((session) => setAuthSession(session));
   }, []);
 
   useEffect(() => {
@@ -411,7 +416,8 @@ export default function App() {
   };
 
   if (!authSession) {
-    return <AuthScreen cities={cities} onAuthenticated={handleAuthenticated} />;
+    if (window.location.pathname === "/activate") return <ActivationScreen onAuthenticated={handleAuthenticated} />;
+    return <AuthScreen onAuthenticated={handleAuthenticated} />;
   }
 
   if (activeTab === "pekerjaan") {
