@@ -23,6 +23,10 @@ Folder ini memecah rencana implementasi menjadi issue GitHub mandiri. Buat satu 
 - [Manual testing Member 360](manual_testing/03-testing-member-360.md) — checklist UAT Member 360 & Data Governance (Issue 03).
 - [Kontrak Data dan API Member 360](member-360-api.md) — taxonomy, schema, validation, dedupe, masking, retention, dan API spec.
 
+## Panduan Testing
+
+- [Manual testing scoped RBAC dan multi-kota](testing-scoped-rbac-multi-kota.md) — checklist UAT issue #9, termasuk isolasi lintas kota, jurnal mentor/mentee, sesi, audit, storage, serta rollback migrasi.
+
 ## Aturan Penutupan Issue
 
 Issue hanya ditutup setelah seluruh checklist DoD selesai, test terkait lulus di CI, perubahan diverifikasi pada staging, dan Product Owner menerima demo. Perubahan yang menyentuh data pribadi wajib melalui review policy akses dan tidak boleh mengandalkan penyembunyian menu frontend sebagai pengaman.
