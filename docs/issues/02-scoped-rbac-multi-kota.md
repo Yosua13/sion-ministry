@@ -48,7 +48,7 @@ Endpoint utama:
 
 Migration `000005_add_scoped_rbac.up.sql` dan rollback `000005_add_scoped_rbac.down.sql` mencakup hierarchy, assignment, permission, audit, session device, relasi mentor/mentee, attendance, serta scope donasi dan lamaran. Integration test menggunakan PostgreSQL terisolasi dan membuktikan cross-city denial, self access, assigned mentor, unassigned mentor denial, serta default-deny tanpa assignment.
 
-Panduan eksekusi UAT, data uji, expected result, pengujian API langsung, dan lembar persetujuan tersedia di [Panduan Manual Testing Scoped RBAC dan Multi-Kota](testing-scoped-rbac-multi-kota.md).
+Panduan eksekusi UAT, data uji, expected result, pengujian API langsung, dan lembar persetujuan tersedia di [Panduan Manual Testing Scoped RBAC dan Multi-Kota](../manual_testing/02-testing-scoped-rbac-multi-kota.md).
 
 ## Mengapa
 

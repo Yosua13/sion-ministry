@@ -11,7 +11,7 @@ Migration `000006_add_member_360` menambahkan UUID untuk record baru, normalized
 
 Halaman Member 360 menggunakan endpoint server-side dan menyediakan inline validation, loading/empty/error state, kandidat duplicate sebelum simpan, alasan override, history pelayanan/consent, archive beralasan, dan masked export.
 
-Kontrak schema, validation, permission, masking, endpoint, dan migration report tersedia pada [Kontrak Data dan API Member 360](member-360-api.md). Checklist UAT tersedia pada [Panduan Manual Testing Member 360](testing-member-360.md).
+Kontrak schema, validation, permission, masking, endpoint, dan migration report tersedia pada [Kontrak Data dan API Member 360](../member-360-api.md). Checklist UAT tersedia pada [Panduan Manual Testing Member 360](../manual_testing/03-testing-member-360.md).
 
 ## Mengapa
 
