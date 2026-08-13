@@ -35,10 +35,15 @@ func (e *MemberDuplicateConflictError) Error() string { return "ditemukan kandid
 type memberService struct {
 	memberRepo repository.MemberRepository
 	cityRepo   repository.CityRepository
+	inviter    interface {
+		InviteMember(*models.Member, string) error
+	}
 }
 
-func NewMemberService(memberRepo repository.MemberRepository, cityRepo repository.CityRepository) MemberService {
-	return &memberService{memberRepo: memberRepo, cityRepo: cityRepo}
+func NewMemberService(memberRepo repository.MemberRepository, cityRepo repository.CityRepository, inviter interface {
+	InviteMember(*models.Member, string) error
+}) MemberService {
+	return &memberService{memberRepo: memberRepo, cityRepo: cityRepo, inviter: inviter}
 }
 
 func (s *memberService) List(query models.MemberListQuery) (*models.MemberListResult, error) {
@@ -107,11 +112,9 @@ func validateAndNormalizeMember(member *models.Member) error {
 	}
 	member.NormalizedEmail = normalizeMemberEmail(member.Email)
 	member.Email = member.NormalizedEmail
-	if member.Email != "" {
-		parsed, err := mail.ParseAddress(member.Email)
-		if err != nil || parsed.Address != member.Email {
-			errs["email"] = "Format email tidak valid."
-		}
+	parsed, err := mail.ParseAddress(member.Email)
+	if member.Email == "" || err != nil || parsed.Address != member.Email {
+		errs["email"] = "Email wajib diisi dengan format yang valid untuk aktivasi akun."
 	}
 	if strings.TrimSpace(member.CityID) == "" {
 		errs["cityId"] = "Primary service point wajib dipilih."
@@ -229,18 +232,6 @@ func newConsentHistory(member *models.Member, actorID string, recorded time.Time
 	}
 }
 
-func reviewsFor(memberID, reason string, candidates []models.MemberDuplicateCandidate) []models.MemberDuplicateReview {
-	reviews := make([]models.MemberDuplicateReview, 0, len(candidates))
-	for _, candidate := range candidates {
-		reviews = append(reviews, models.MemberDuplicateReview{
-			ID: uuid.NewString(), MemberID: memberID, CandidateMemberID: candidate.ID,
-			MatchReasons: candidate.MatchReasons, Score: candidate.Score, OverrideReason: reason,
-			Status: "pending", CreatedAt: time.Now().UTC(),
-		})
-	}
-	return reviews
-}
-
 func duplicateGate(member *models.Member, candidates []models.MemberDuplicateCandidate) error {
 	if len(candidates) == 0 {
 		return nil
@@ -271,17 +262,14 @@ func (s *memberService) Create(member *models.Member, actorID string, cityIDs []
 		return err
 	}
 	now := time.Now().UTC()
+	if s.inviter == nil {
+		return errors.New("layanan undangan akun tidak tersedia")
+	}
 	member.ID = uuid.NewString()
 	member.Version = 1
-	member.OwnerUserID = pointer(actorID)
 	member.CreatedAt = now
 	member.UpdatedAt = now
-	if member.ConsentRecordedAt == nil {
-		member.ConsentRecordedAt = &now
-	}
-	histories := []models.MemberHistory{newMemberHistory(member.ID, actorID, "created", "member", "", member.Name, member.DuplicateOverrideReason)}
-	consent := newConsentHistory(member, actorID, *member.ConsentRecordedAt)
-	if err := s.memberRepo.Create360(member, histories, consent, reviewsFor(member.ID, member.DuplicateOverrideReason, candidates)); err != nil {
+	if err := s.inviter.InviteMember(member, actorID); err != nil {
 		return err
 	}
 	return s.cityRepo.RecalculateStats()
@@ -352,7 +340,7 @@ func (s *memberService) Update(member *models.Member, actorID string, cityIDs []
 	} else {
 		member.ConsentRecordedAt = old.ConsentRecordedAt
 	}
-	if err := s.memberRepo.Update360(member, expectedVersion, histories, consent, reviewsFor(member.ID, member.DuplicateOverrideReason, candidates)); err != nil {
+	if err := s.memberRepo.UpdateProfile(member, expectedVersion, histories, consent); err != nil {
 		if errors.Is(err, repository.ErrMemberVersionConflict) {
 			return &MemberValidationError{Fields: map[string]string{"version": "Data telah berubah. Muat ulang profil sebelum menyimpan kembali."}}
 		}
@@ -379,30 +367,6 @@ func (s *memberService) GetHistory(memberID string) (*models.MemberHistoryResult
 
 func (s *memberService) Export(query models.MemberListQuery) ([]models.Member, error) {
 	return s.memberRepo.Export(query, 10000)
-}
-
-func (s *memberService) ListDuplicateReviews(status string, cityIDs []string, allCities bool) ([]models.MemberDuplicateReview, error) {
-	status = strings.ToLower(strings.TrimSpace(status))
-	if status != "" && status != "pending" && status != "merged" && status != "not_duplicate" {
-		return nil, &MemberValidationError{Fields: map[string]string{"status": "Status duplicate review tidak valid."}}
-	}
-	return s.memberRepo.ListDuplicateReviews(status, cityIDs, allCities)
-}
-
-func (s *memberService) GetDuplicateReview(id string) (*models.MemberDuplicateReview, error) {
-	return s.memberRepo.GetDuplicateReview(strings.TrimSpace(id))
-}
-
-func (s *memberService) DecideDuplicateReview(id, decision, note, actorID string) (*models.MemberDuplicateReview, error) {
-	decision = strings.ToLower(strings.TrimSpace(decision))
-	note = strings.TrimSpace(note)
-	if decision != "merged" && decision != "not_duplicate" {
-		return nil, &MemberValidationError{Fields: map[string]string{"decision": "Keputusan harus merged atau not_duplicate."}}
-	}
-	if len([]rune(note)) < 10 {
-		return nil, &MemberValidationError{Fields: map[string]string{"note": "Catatan keputusan minimal 10 karakter."}}
-	}
-	return s.memberRepo.DecideDuplicateReview(strings.TrimSpace(id), decision, note, actorID)
 }
 
 func MaskPhone(value string) string {

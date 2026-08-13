@@ -7,50 +7,86 @@ import (
 )
 
 type User struct {
-	ID           string  `gorm:"primaryKey" json:"id"`
-	Name         string  `json:"name"`
-	Email        string  `gorm:"uniqueIndex" json:"email"`
-	PasswordHash string  `json:"-"`
-	Role         string  `json:"role"`
-	Status       string  `json:"status"`
-	CityID       *string `json:"cityId,omitempty"`
-	CityName     string  `json:"cityName"`
-	CreatedAt    string  `json:"createdAt"`
-	ApprovedAt   string  `json:"approvedAt"`
+	ID                string     `gorm:"primaryKey" json:"id"`
+	Name              string     `gorm:"column:full_name" json:"name"`
+	Email             string     `json:"email"`
+	PasswordHash      *string    `json:"-"`
+	CityID            *string    `json:"cityId,omitempty"`
+	CityName          string     `gorm:"column:city_name;->" json:"cityName,omitempty"`
+	Phone             string     `gorm:"column:phone_e164" json:"phone,omitempty"`
+	DiscipleshipStage string     `json:"discipleshipStage,omitempty"`
+	MentorUserID      *string    `json:"mentorUserId,omitempty"`
+	MentorName        string     `json:"mentorName,omitempty"`
+	GroupName         string     `json:"groupName,omitempty"`
+	JoinedOn          *time.Time `json:"joinedOn,omitempty"`
+	MemberStatus      string     `json:"memberStatus,omitempty"`
+	Status            string     `gorm:"column:account_status" json:"status"`
+	IsMember          bool       `json:"isMember"`
+	ProfileVersion    int        `json:"profileVersion,omitempty"`
+	ArchivedAt        *time.Time `json:"archivedAt,omitempty"`
+	ArchivedBy        *string    `json:"archivedBy,omitempty"`
+	ArchiveReason     string     `json:"archiveReason,omitempty"`
+	RetentionUntil    *time.Time `json:"retentionUntil,omitempty"`
+	ActivatedAt       *time.Time `json:"activatedAt,omitempty"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	UpdatedAt         time.Time  `json:"updatedAt"`
+	Role              string     `gorm:"-" json:"role"`
 }
 
 type AuthSession struct {
-	Token      string `gorm:"primaryKey" json:"-"`
-	ID         string `json:"id"`
-	UserID     string `json:"userId"`
-	ExpiresAt  string `json:"expiresAt"`
-	CreatedAt  string `json:"createdAt"`
-	DeviceName string `json:"deviceName"`
-	UserAgent  string `json:"userAgent"`
-	IPAddress  string `json:"ipAddress"`
-	LastSeenAt string `json:"lastSeenAt"`
-	RevokedAt  string `json:"revokedAt,omitempty"`
+	ID           string     `json:"id"`
+	TokenHash    string     `gorm:"column:token_hash" json:"-"`
+	UserID       string     `json:"userId"`
+	ExpiresAt    time.Time  `json:"expiresAt"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	DeviceName   string     `json:"deviceName"`
+	UserAgent    string     `json:"userAgent"`
+	IPAddress    string     `gorm:"column:ip_address" json:"ipAddress"`
+	LastSeenAt   *time.Time `json:"lastSeenAt,omitempty"`
+	RevokedAt    *time.Time `json:"revokedAt,omitempty"`
+	RevokedBy    *string    `json:"revokedBy,omitempty"`
+	RevokeReason string     `json:"revokeReason,omitempty"`
 }
 
+func (AuthSession) TableName() string { return "auth_sessions" }
+
 type AuthResponse struct {
-	Token     string `json:"token"`
-	User      User   `json:"user"`
-	ExpiresAt string `json:"expiresAt"`
+	User      User      `json:"user"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+type AccountInvitation struct {
+	ID        string     `gorm:"primaryKey" json:"id"`
+	UserID    string     `json:"userId"`
+	TokenHash string     `json:"-"`
+	ExpiresAt time.Time  `json:"expiresAt"`
+	SentAt    *time.Time `json:"sentAt,omitempty"`
+	UsedAt    *time.Time `json:"usedAt,omitempty"`
+	RevokedAt *time.Time `json:"revokedAt,omitempty"`
+	CreatedBy *string    `json:"createdBy,omitempty"`
+	CreatedAt time.Time  `json:"createdAt"`
+}
+
+type UserRole struct {
+	ID        string     `gorm:"primaryKey" json:"id"`
+	UserID    string     `json:"userId"`
+	Role      string     `json:"role"`
+	CityID    *string    `json:"cityId,omitempty"`
+	GrantedBy *string    `json:"grantedBy,omitempty"`
+	GrantedAt time.Time  `json:"grantedAt"`
+	RevokedAt *time.Time `json:"revokedAt,omitempty"`
 }
 
 type City struct {
-	ID             string `gorm:"primaryKey" json:"id"`
-	Name           string `json:"name"`
-	Region         string `json:"region"`
-	ReachedDate    string `json:"reachedDate"`
-	WorkersCount   int    `json:"workersCount"`
-	MembersCount   int    `json:"membersCount"`
-	JournalsCount  int    `json:"journalsCount"`
-	BeritaCount    int    `json:"beritaCount"`
-	JurnalPaCount  int    `json:"jurnalPaCount"`
-	OrganizationID string `json:"organizationId"`
-	MinistryUnitID string `json:"ministryUnitId"`
-	RegionID       string `json:"regionId"`
+	ID            string `gorm:"primaryKey" json:"id"`
+	Name          string `json:"name"`
+	Region        string `json:"region"`
+	ReachedDate   string `json:"reachedDate"`
+	WorkersCount  int    `gorm:"column:workers_count;->" json:"workersCount"`
+	MembersCount  int    `gorm:"column:members_count;->" json:"membersCount"`
+	JournalsCount int    `gorm:"column:journals_count;->" json:"journalsCount"`
+	BeritaCount   int    `gorm:"column:berita_count;->" json:"beritaCount"`
+	JurnalPaCount int    `gorm:"column:jurnal_pa_count;->" json:"jurnalPaCount"`
 }
 
 type DiscipleshipModule struct {
@@ -68,30 +104,30 @@ type DiscipleshipModule struct {
 
 type Member struct {
 	ID                       string         `gorm:"primaryKey" json:"id"`
-	Name                     string         `json:"name"`
-	NormalizedName           string         `json:"-"`
+	Name                     string         `gorm:"column:full_name" json:"name"`
+	NormalizedName           string         `gorm:"-" json:"-"`
 	Email                    string         `json:"email"`
-	NormalizedEmail          string         `json:"-"`
-	Phone                    string         `json:"phone"`
-	NormalizedPhone          string         `json:"-"`
+	NormalizedEmail          string         `gorm:"-" json:"-"`
+	Phone                    string         `gorm:"column:phone_e164" json:"phone"`
+	NormalizedPhone          string         `gorm:"-" json:"-"`
 	CityID                   string         `json:"cityId"`
-	CityName                 string         `json:"cityName"`
-	PrimaryServicePointID    string         `json:"primaryServicePointId"`
+	CityName                 string         `gorm:"column:city_name;->" json:"cityName"`
+	PrimaryServicePointID    string         `gorm:"column:city_id" json:"primaryServicePointId"`
 	DiscipleshipStage        string         `json:"discipleshipStage"`
 	MentorName               string         `json:"mentorName"`
 	MentorUserID             *string        `json:"mentorUserId,omitempty"`
 	GroupName                string         `json:"groupName"`
-	JoinedDate               string         `gorm:"column:joined_date" json:"joinedDate"`
+	JoinedDate               string         `gorm:"-" json:"joinedDate"`
 	JoinedOn                 time.Time      `gorm:"type:date" json:"joinedOn"`
-	Status                   string         `json:"status"`
-	UserID                   *string        `json:"userId,omitempty"`
-	OwnerUserID              *string        `json:"ownerUserId,omitempty"`
-	Version                  int            `json:"version"`
-	ConsentStatus            string         `json:"consentStatus"`
-	ConsentSource            string         `json:"consentSource"`
-	ConsentPurpose           string         `json:"consentPurpose"`
-	ConsentRecordedAt        *time.Time     `json:"consentRecordedAt,omitempty"`
-	CommunicationPreferences pq.StringArray `gorm:"type:text[]" json:"communicationPreferences"`
+	Status                   string         `gorm:"column:member_status" json:"status"`
+	UserID                   *string        `gorm:"-" json:"userId,omitempty"`
+	OwnerUserID              *string        `gorm:"-" json:"ownerUserId,omitempty"`
+	Version                  int            `gorm:"column:profile_version" json:"version"`
+	ConsentStatus            string         `gorm:"column:consent_status;->" json:"consentStatus"`
+	ConsentSource            string         `gorm:"column:consent_source;->" json:"consentSource"`
+	ConsentPurpose           string         `gorm:"column:consent_purpose;->" json:"consentPurpose"`
+	ConsentRecordedAt        *time.Time     `gorm:"column:consent_recorded_at;->" json:"consentRecordedAt,omitempty"`
+	CommunicationPreferences pq.StringArray `gorm:"column:communication_preferences;->;type:text[]" json:"communicationPreferences"`
 	ArchivedAt               *time.Time     `json:"archivedAt,omitempty"`
 	ArchivedBy               *string        `json:"archivedBy,omitempty"`
 	ArchiveReason            string         `json:"archiveReason,omitempty"`
@@ -99,7 +135,10 @@ type Member struct {
 	CreatedAt                time.Time      `json:"createdAt"`
 	UpdatedAt                time.Time      `json:"updatedAt"`
 	DuplicateOverrideReason  string         `gorm:"-" json:"duplicateOverrideReason,omitempty"`
+	InviteRole               string         `gorm:"-" json:"inviteRole,omitempty"`
 }
+
+func (Member) TableName() string { return "users" }
 
 type MemberHistory struct {
 	ID          string    `gorm:"type:uuid;primaryKey" json:"id"`
@@ -115,15 +154,17 @@ type MemberHistory struct {
 
 type MemberConsentHistory struct {
 	ID                       string         `gorm:"type:uuid;primaryKey" json:"id"`
-	MemberID                 string         `json:"memberId"`
-	ActorUserID              *string        `json:"actorUserId,omitempty"`
-	ConsentStatus            string         `json:"consentStatus"`
-	CommunicationPreferences pq.StringArray `gorm:"type:text[]" json:"communicationPreferences"`
+	MemberID                 string         `gorm:"column:user_id" json:"memberId"`
+	ActorUserID              *string        `gorm:"column:recorded_by" json:"actorUserId,omitempty"`
+	ConsentStatus            string         `gorm:"column:status" json:"consentStatus"`
+	CommunicationPreferences pq.StringArray `gorm:"column:channels;type:text[]" json:"communicationPreferences"`
 	Source                   string         `json:"source"`
 	Purpose                  string         `json:"purpose"`
 	RecordedAt               time.Time      `json:"recordedAt"`
 	CreatedAt                time.Time      `json:"createdAt"`
 }
+
+func (MemberConsentHistory) TableName() string { return "consent_records" }
 
 type MemberDuplicateReview struct {
 	ID                string         `gorm:"type:uuid;primaryKey" json:"id"`
@@ -237,13 +278,14 @@ type DonationRecord struct {
 }
 
 type AttendanceCheckIn struct {
-	ID          string `gorm:"primaryKey" json:"id"`
-	EventID     string `json:"eventId"`
-	MemberID    string `json:"memberId"`
-	CityID      string `json:"cityId"`
-	CheckedInBy string `json:"checkedInBy"`
-	CheckedInAt string `json:"checkedInAt"`
+	ID              string    `gorm:"primaryKey" json:"id"`
+	EventID         string    `json:"eventId"`
+	UserID          string    `json:"userId"`
+	CheckedInByUser string    `gorm:"column:checked_in_by_user_id" json:"checkedInByUser"`
+	CheckedInAt     time.Time `json:"checkedInAt"`
 }
+
+func (AttendanceCheckIn) TableName() string { return "event_attendances" }
 
 type DiscipleshipLink struct {
 	ID          string `gorm:"primaryKey" json:"id"`
@@ -284,44 +326,6 @@ type JobApplication struct {
 	UserID          *string `json:"userId,omitempty"`
 }
 
-type Organization struct {
-	ID        string `gorm:"primaryKey" json:"id"`
-	Name      string `json:"name"`
-	Status    string `json:"status"`
-	CreatedAt string `json:"createdAt"`
-}
-
-type MinistryUnit struct {
-	ID             string `gorm:"primaryKey" json:"id"`
-	OrganizationID string `json:"organizationId"`
-	Name           string `json:"name"`
-	Status         string `json:"status"`
-	CreatedAt      string `json:"createdAt"`
-}
-
-type Region struct {
-	ID             string `gorm:"primaryKey" json:"id"`
-	MinistryUnitID string `json:"ministryUnitId"`
-	Name           string `json:"name"`
-	Status         string `json:"status"`
-	CreatedAt      string `json:"createdAt"`
-}
-
-type RoleAssignment struct {
-	ID         string  `gorm:"primaryKey" json:"id"`
-	UserID     string  `json:"userId"`
-	Role       string  `json:"role"`
-	ScopeType  string  `json:"scopeType"`
-	ScopeID    string  `json:"scopeId"`
-	Status     string  `json:"status"`
-	ValidFrom  string  `json:"validFrom"`
-	ValidUntil *string `json:"validUntil,omitempty"`
-	ApprovedBy *string `json:"approvedBy,omitempty"`
-	ApprovedAt *string `json:"approvedAt,omitempty"`
-	RevokedAt  *string `json:"revokedAt,omitempty"`
-	CreatedAt  string  `json:"createdAt"`
-}
-
 type AuditLog struct {
 	ID           string         `gorm:"primaryKey" json:"id"`
 	ActorUserID  *string        `json:"actorUserId,omitempty"`
@@ -338,19 +342,15 @@ type AuditLog struct {
 }
 
 type AccessContext struct {
-	UserID      string           `json:"userId"`
-	Permissions []string         `json:"permissions"`
-	Roles       []string         `json:"roles"`
-	CityIDs     []string         `json:"cityIds"`
-	AllCities   bool             `json:"allCities"`
-	Assignments []RoleAssignment `json:"assignments"`
+	UserID      string   `json:"userId"`
+	Permissions []string `json:"permissions"`
+	Roles       []string `json:"roles"`
+	CityIDs     []string `json:"cityIds"`
+	AllCities   bool     `json:"allCities"`
 }
 
 type ScopeCatalog struct {
-	Organizations []Organization `json:"organizations"`
-	MinistryUnits []MinistryUnit `json:"ministryUnits"`
-	Regions       []Region       `json:"regions"`
-	Cities        []City         `json:"cities"`
+	Cities []City `json:"cities"`
 }
 
 // Struct to parse the sync payloads from frontend

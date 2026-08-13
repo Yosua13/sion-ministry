@@ -19,12 +19,13 @@ func SetupRouter(app *fiber.App, handlers *Handlers, cfg *config.Config) {
 	app.Use(recover.New())
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     strings.Join(cfg.AllowedOrigins, ","),
-		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
+		AllowHeaders:     "Origin, Content-Type, Accept, X-CSRF-Token, X-Device-Name",
 		AllowMethods:     "GET, POST, PUT, DELETE, OPTIONS",
-		AllowCredentials: false,
+		AllowCredentials: true,
 		MaxAge:           86400,
 	}))
 	app.Use(NormalizeErrorResponses())
+	app.Use(CSRFProtection(cfg.AllowedOrigins))
 
 	// API Endpoint Group
 	api := app.Group("/api")
@@ -36,8 +37,8 @@ func SetupRouter(app *fiber.App, handlers *Handlers, cfg *config.Config) {
 	authLimiter := limiter.New(limiter.Config{Max: 5, Expiration: 15 * time.Minute, LimitReached: RateLimitError})
 	aiLimiter := limiter.New(limiter.Config{Max: 20, Expiration: time.Minute, LimitReached: RateLimitError})
 	uploadLimiter := limiter.New(limiter.Config{Max: 10, Expiration: time.Minute, LimitReached: RateLimitError})
-	api.Post("/auth/register", authLimiter, handlers.Register)
 	api.Post("/auth/login", authLimiter, handlers.Login)
+	api.Post("/auth/activate", authLimiter, handlers.Activate)
 
 	protected := api.Group("", handlers.RequireAuth)
 	protected.Get("/auth/me", handlers.Me)
@@ -45,11 +46,10 @@ func SetupRouter(app *fiber.App, handlers *Handlers, cfg *config.Config) {
 	protected.Post("/auth/logout-all", handlers.LogoutAll)
 	protected.Get("/auth/access", handlers.GetAccessContext)
 	protected.Get("/auth/users", handlers.RequirePermission("user.manage"), handlers.GetUsers)
-	protected.Put("/auth/users/:id/approve", handlers.RequirePermission("user.manage"), handlers.ApproveUser)
-	protected.Get("/auth/role-assignments", handlers.RequirePermission("assignment.manage"), handlers.GetRoleAssignments)
-	protected.Post("/auth/role-assignments", handlers.RequirePermission("assignment.manage"), handlers.CreateRoleAssignment)
-	protected.Put("/auth/role-assignments/:id/approve", handlers.RequirePermission("assignment.manage"), handlers.ApproveRoleAssignment)
-	protected.Delete("/auth/role-assignments/:id", handlers.RequirePermission("assignment.manage"), handlers.RevokeRoleAssignment)
+	protected.Post("/auth/users/:id/resend-invitation", handlers.RequirePermission("user.invite"), handlers.ResendInvitation)
+	protected.Get("/auth/roles", handlers.RequirePermission("assignment.manage"), handlers.GetRoles)
+	protected.Post("/auth/roles", handlers.RequirePermission("assignment.manage"), handlers.GrantRole)
+	protected.Delete("/auth/roles/:id", handlers.RequirePermission("assignment.manage"), handlers.RevokeRole)
 	protected.Post("/auth/mentorships", handlers.RequirePermission("assignment.manage"), handlers.AssignMentor)
 	protected.Get("/auth/scopes", handlers.RequirePermission("assignment.manage"), handlers.GetScopeCatalog)
 	protected.Get("/auth/audit-logs", handlers.RequirePermission("audit.read"), handlers.GetAuditLogs)
@@ -74,8 +74,6 @@ func SetupRouter(app *fiber.App, handlers *Handlers, cfg *config.Config) {
 	// Members
 	protected.Get("/members", handlers.RequirePermission("member.read"), handlers.GetMembers)
 	protected.Get("/members/export", handlers.RequirePermission("member.export"), handlers.ExportMembers)
-	protected.Get("/members/duplicate-reviews", handlers.RequirePermission("member.history.read"), handlers.GetMemberDuplicateReviews)
-	protected.Put("/members/duplicate-reviews/:id", handlers.RequirePermission("member.write"), handlers.DecideMemberDuplicateReview)
 	protected.Post("/members/duplicates", handlers.RequirePermission("member.write"), handlers.CheckMemberDuplicates)
 	protected.Post("/members", handlers.RequirePermission("member.write"), handlers.CreateMember)
 	protected.Get("/members/:id", handlers.RequirePermission("member.read"), handlers.GetMember)

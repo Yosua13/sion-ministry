@@ -24,7 +24,18 @@ func NewCityRepository(db *gorm.DB) CityRepository {
 
 func (r *cityRepository) GetAll() ([]models.City, error) {
 	var cities []models.City
-	err := r.db.Find(&cities).Error
+	err := r.db.Raw(`
+		SELECT c.*,
+			(SELECT COUNT(DISTINCT ur.user_id) FROM user_roles ur
+			 WHERE ur.city_id = c.id AND ur.revoked_at IS NULL
+			   AND ur.role IN ('pekerja', 'mentor')) AS workers_count,
+			(SELECT COUNT(*) FROM users u
+			 WHERE u.city_id = c.id AND u.is_member = TRUE) AS members_count,
+			(SELECT COUNT(*) FROM jurnal_pas j WHERE j.city_id = c.id) AS journals_count,
+			(SELECT COUNT(*) FROM berita_acaras b WHERE b.city_id = c.id) AS berita_count,
+			(SELECT COUNT(*) FROM jurnal_pas j WHERE j.city_id = c.id) AS jurnal_pa_count
+		FROM cities c
+		ORDER BY c.name`).Scan(&cities).Error
 	return cities, err
 }
 
@@ -50,14 +61,7 @@ func (r *cityRepository) Delete(id string) error {
 }
 
 func (r *cityRepository) RecalculateStats() error {
-	query := `
-		UPDATE cities c
-		SET 
-			members_count = COALESCE((SELECT COUNT(*) FROM members m WHERE m.city_id = c.id AND m.status <> 'archived'), 0),
-			berita_count = COALESCE((SELECT COUNT(*) FROM berita_acaras b WHERE b.city_id = c.id), 0),
-			jurnal_pa_count = COALESCE((SELECT COUNT(*) FROM jurnal_pas j WHERE j.city_id = c.id), 0),
-			journals_count = COALESCE((SELECT COUNT(*) FROM berita_acaras b WHERE b.city_id = c.id), 0) + 
-			                 COALESCE((SELECT COUNT(*) FROM jurnal_pas j WHERE j.city_id = c.id), 0)
-	`
-	return r.db.Exec(query).Error
+	// Counters were denormalized copies and are intentionally no longer persisted.
+	// Dashboard queries operational records directly to avoid stale statistics.
+	return nil
 }
