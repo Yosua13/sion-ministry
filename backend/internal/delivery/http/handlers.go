@@ -1,9 +1,12 @@
 package http
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"errors"
 	"log"
+	"strconv"
 	"strings"
 
 	"backend/internal/models"
@@ -362,20 +365,162 @@ func (h *Handlers) GetCitiesByProvince(c *fiber.Ctx) error {
 }
 
 // Members Handlers
+func memberQueryFromRequest(c *fiber.Ctx, access *models.AccessContext, user *models.User, includeArchivedAllowed bool) models.MemberListQuery {
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	pageSize, _ := strconv.Atoi(c.Query("pageSize", "20"))
+	query := models.MemberListQuery{
+		Page: page, PageSize: pageSize, Search: strings.TrimSpace(c.Query("q")), CityID: strings.TrimSpace(c.Query("cityId")),
+		Status: strings.ToLower(strings.TrimSpace(c.Query("status"))), IncludeArchived: includeArchivedAllowed && c.QueryBool("includeArchived", false),
+		CityIDs: access.CityIDs, AllCities: access.AllCities,
+	}
+	if hRole(access, "jemaat") {
+		query.SelfUserID = user.ID
+	}
+	return query
+}
+
+func hRole(access *models.AccessContext, role string) bool {
+	if access == nil {
+		return false
+	}
+	for _, value := range access.Roles {
+		if value == role {
+			return true
+		}
+	}
+	return false
+}
+
+func writeMemberServiceError(c *fiber.Ctx, err error) error {
+	var validation *service.MemberValidationError
+	if errors.As(err, &validation) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":  APIError{Code: "member_validation_failed", Message: validation.Error(), RequestID: requestID(c)},
+			"fields": validation.Fields,
+		})
+	}
+	var duplicate *service.MemberDuplicateConflictError
+	if errors.As(err, &duplicate) {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+			"error":      APIError{Code: "member_duplicate_candidates", Message: duplicate.Error(), RequestID: requestID(c)},
+			"candidates": duplicate.Candidates,
+		})
+	}
+	return WriteAPIError(c, fiber.StatusInternalServerError, "member_operation_failed", "Operasi Member 360 gagal diproses.")
+}
+
+func maskMemberResult(result *models.MemberListResult, user *models.User, canReadSensitive bool) {
+	if result == nil || canReadSensitive {
+		return
+	}
+	for index := range result.Items {
+		member := result.Items[index]
+		if member.UserID == nil || *member.UserID != user.ID {
+			result.Items[index] = service.MaskMemberSensitive(member)
+		}
+	}
+}
+
 func (h *Handlers) GetMembers(c *fiber.Ctx) error {
-	members, err := h.services.Member.GetAll()
+	user, _ := c.Locals("user").(*models.User)
+	access, _ := c.Locals("access").(*models.AccessContext)
+	canReviewArchived := h.services.Access.HasPermission(access, "member.archive") || h.services.Access.HasPermission(access, "member.history.read")
+	query := memberQueryFromRequest(c, access, user, canReviewArchived)
+	if query.CityID != "" && !h.services.Access.CanAccessCity(access, query.CityID) {
+		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Filter kota berada di luar scope akun.")
+	}
+	result, err := h.services.Member.List(query)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return WriteAPIError(c, fiber.StatusInternalServerError, "member_list_failed", "Gagal mengambil daftar anggota.")
+	}
+	canReadSensitive := h.services.Access.HasPermission(access, "member.sensitive.read")
+	maskMemberResult(result, user, canReadSensitive)
+	if canReadSensitive && len(result.Items) > 0 {
+		h.services.Access.RecordAudit(user.ID, "member.sensitive.read", "member_list", "", "", "", "success", requestID(c), c.IP(), map[string]any{"recordCount": len(result.Items), "page": result.Page})
+	}
+	return c.JSON(result)
+}
+
+func (h *Handlers) GetMember(c *fiber.Ctx) error {
+	member, err := h.services.Member.GetByID(c.Params("id"))
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusNotFound, "member_not_found", "Anggota tidak ditemukan.")
 	}
 	user, _ := c.Locals("user").(*models.User)
 	access, _ := c.Locals("access").(*models.AccessContext)
-	filtered := make([]models.Member, 0, len(members))
-	for i := range members {
-		if h.services.Access.CanAccessMember(access, user, &members[i], false) {
-			filtered = append(filtered, members[i])
-		}
+	if !h.services.Access.CanAccessMember(access, user, member, false) {
+		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Anggota berada di luar scope akun.")
 	}
-	return c.JSON(filtered)
+	if member.Status == "archived" && !h.services.Access.HasPermission(access, "member.archive") && !h.services.Access.HasPermission(access, "member.history.read") {
+		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Profil arsip membutuhkan izin histori atau archive.")
+	}
+	canReadSensitive := h.services.Access.HasPermission(access, "member.sensitive.read")
+	if !canReadSensitive && (member.UserID == nil || *member.UserID != user.ID) {
+		masked := service.MaskMemberSensitive(*member)
+		member = &masked
+	}
+	action := "member.self.read"
+	if canReadSensitive {
+		action = "member.sensitive.read"
+	}
+	h.services.Access.RecordAudit(user.ID, action, "member", member.ID, "city", member.CityID, "success", requestID(c), c.IP(), nil)
+	return c.JSON(member)
+}
+
+func (h *Handlers) CheckMemberDuplicates(c *fiber.Ctx) error {
+	var member models.Member
+	if err := c.BodyParser(&member); err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Payload anggota tidak valid.")
+	}
+	access, _ := c.Locals("access").(*models.AccessContext)
+	if !h.services.Access.CanAccessCity(access, member.CityID) {
+		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Kota anggota berada di luar scope akun.")
+	}
+	candidates, err := h.services.Member.FindDuplicateCandidates(&member, strings.TrimSpace(c.Query("excludeId")), access.CityIDs, access.AllCities)
+	if err != nil {
+		return writeMemberServiceError(c, err)
+	}
+	return c.JSON(fiber.Map{"candidates": candidates})
+}
+
+func (h *Handlers) GetMemberDuplicateReviews(c *fiber.Ctx) error {
+	user, _ := c.Locals("user").(*models.User)
+	access, _ := c.Locals("access").(*models.AccessContext)
+	reviews, err := h.services.Member.ListDuplicateReviews(c.Query("status", "pending"), access.CityIDs, access.AllCities)
+	if err != nil {
+		return writeMemberServiceError(c, err)
+	}
+	h.services.Access.RecordAudit(user.ID, "member.duplicate_review.listed", "member_duplicate_review", "", "", "", "success", requestID(c), c.IP(), map[string]any{"recordCount": len(reviews)})
+	return c.JSON(reviews)
+}
+
+func (h *Handlers) DecideMemberDuplicateReview(c *fiber.Ctx) error {
+	var input struct {
+		Decision string `json:"decision"`
+		Note     string `json:"note"`
+	}
+	if err := c.BodyParser(&input); err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Payload keputusan duplicate tidak valid.")
+	}
+	review, err := h.services.Member.GetDuplicateReview(c.Params("id"))
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusNotFound, "duplicate_review_not_found", "Duplicate review tidak ditemukan.")
+	}
+	member, err := h.services.Member.GetByID(review.MemberID)
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusNotFound, "member_not_found", "Anggota tidak ditemukan.")
+	}
+	user, _ := c.Locals("user").(*models.User)
+	access, _ := c.Locals("access").(*models.AccessContext)
+	if !h.services.Access.CanAccessMember(access, user, member, true) {
+		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Duplicate review berada di luar scope akun.")
+	}
+	decided, err := h.services.Member.DecideDuplicateReview(review.ID, input.Decision, input.Note, user.ID)
+	if err != nil {
+		return writeMemberServiceError(c, err)
+	}
+	h.services.Access.RecordAudit(user.ID, "member.duplicate_review.decided", "member_duplicate_review", review.ID, "city", member.CityID, "success", requestID(c), c.IP(), map[string]any{"decision": decided.Status, "note": decided.DecisionNote})
+	return c.JSON(decided)
 }
 
 func (h *Handlers) CreateMember(c *fiber.Ctx) error {
@@ -392,9 +537,10 @@ func (h *Handlers) CreateMember(c *fiber.Ctx) error {
 		member.UserID = nil
 		member.MentorUserID = localStringPointer(user.ID)
 	}
-	if err := h.services.Member.Create(&member); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	if err := h.services.Member.Create(&member, user.ID, access.CityIDs, access.AllCities); err != nil {
+		return writeMemberServiceError(c, err)
 	}
+	h.services.Access.RecordAudit(user.ID, "member.created", "member", member.ID, "city", member.CityID, "success", requestID(c), c.IP(), map[string]any{"duplicateOverride": member.DuplicateOverrideReason != ""})
 	return c.Status(fiber.StatusCreated).JSON(member)
 }
 
@@ -415,16 +561,19 @@ func (h *Handlers) UpdateMember(c *fiber.Ctx) error {
 	}
 	if !h.services.Access.HasRole(access, "admin") {
 		member.UserID = existing.UserID
-		member.MentorUserID = localStringPointer(user.ID)
+		member.MentorUserID = existing.MentorUserID
+		member.MentorName = existing.MentorName
 	}
+	member.OwnerUserID = existing.OwnerUserID
 	member.ID = id
-	if err := h.services.Member.Update(&member); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	if err := h.services.Member.Update(&member, user.ID, access.CityIDs, access.AllCities); err != nil {
+		return writeMemberServiceError(c, err)
 	}
+	h.services.Access.RecordAudit(user.ID, "member.updated", "member", member.ID, "city", member.CityID, "success", requestID(c), c.IP(), map[string]any{"version": member.Version, "duplicateOverride": member.DuplicateOverrideReason != ""})
 	return c.JSON(member)
 }
 
-func (h *Handlers) DeleteMember(c *fiber.Ctx) error {
+func (h *Handlers) ArchiveMember(c *fiber.Ctx) error {
 	id := c.Params("id")
 	existing, err := h.services.Member.GetByID(id)
 	if err != nil {
@@ -435,10 +584,76 @@ func (h *Handlers) DeleteMember(c *fiber.Ctx) error {
 	if !h.services.Access.CanAccessMember(access, user, existing, true) {
 		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Anggota berada di luar scope akun.")
 	}
-	if err := h.services.Member.Delete(id); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	var input struct {
+		Reason string `json:"reason"`
 	}
+	if err := c.BodyParser(&input); err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Payload archive tidak valid.")
+	}
+	if err := h.services.Member.Archive(existing, user.ID, input.Reason); err != nil {
+		return writeMemberServiceError(c, err)
+	}
+	h.services.Access.RecordAudit(user.ID, "member.archived", "member", existing.ID, "city", existing.CityID, "success", requestID(c), c.IP(), map[string]any{"reason": strings.TrimSpace(input.Reason)})
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *Handlers) GetMemberHistory(c *fiber.Ctx) error {
+	member, err := h.services.Member.GetByID(c.Params("id"))
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusNotFound, "member_not_found", "Anggota tidak ditemukan.")
+	}
+	user, _ := c.Locals("user").(*models.User)
+	access, _ := c.Locals("access").(*models.AccessContext)
+	if !h.services.Access.CanAccessMember(access, user, member, false) {
+		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Anggota berada di luar scope akun.")
+	}
+	history, err := h.services.Member.GetHistory(member.ID)
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusInternalServerError, "member_history_failed", "Gagal mengambil histori anggota.")
+	}
+	h.services.Access.RecordAudit(user.ID, "member.history.read", "member", member.ID, "city", member.CityID, "success", requestID(c), c.IP(), nil)
+	return c.JSON(history)
+}
+
+func safeCSVCell(value string) string {
+	if value != "" && strings.ContainsAny(value[:1], "=+-@") {
+		return "'" + value
+	}
+	return value
+}
+
+func (h *Handlers) ExportMembers(c *fiber.Ctx) error {
+	user, _ := c.Locals("user").(*models.User)
+	access, _ := c.Locals("access").(*models.AccessContext)
+	reason := strings.TrimSpace(c.Query("reason"))
+	if len([]rune(reason)) < 10 {
+		return WriteAPIError(c, fiber.StatusBadRequest, "export_reason_required", "Alasan export minimal 10 karakter.")
+	}
+	query := memberQueryFromRequest(c, access, user, false)
+	if query.CityID != "" && !h.services.Access.CanAccessCity(access, query.CityID) {
+		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Filter kota berada di luar scope akun.")
+	}
+	if strings.TrimSpace(c.Query("status")) == "archived" || c.QueryBool("includeArchived", false) {
+		return WriteAPIError(c, fiber.StatusBadRequest, "archived_export_forbidden", "Record archived tidak dapat diekspor.")
+	}
+	members, err := h.services.Member.Export(query)
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusInternalServerError, "member_export_failed", "Export anggota gagal.")
+	}
+	buffer := &bytes.Buffer{}
+	writer := csv.NewWriter(buffer)
+	_ = writer.Write([]string{"id", "name", "masked_phone", "masked_email", "city", "status", "joined_on", "consent_status"})
+	for _, member := range members {
+		_ = writer.Write([]string{member.ID, safeCSVCell(member.Name), service.MaskPhone(member.Phone), service.MaskEmail(member.Email), safeCSVCell(member.CityName), member.Status, member.JoinedOn.Format("2006-01-02"), member.ConsentStatus})
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return WriteAPIError(c, fiber.StatusInternalServerError, "member_export_failed", "Export anggota gagal.")
+	}
+	h.services.Access.RecordAudit(user.ID, "member.exported", "member_export", "", "", "", "success", requestID(c), c.IP(), map[string]any{"reason": reason, "recordCount": len(members), "masked": true})
+	c.Set(fiber.HeaderContentType, "text/csv; charset=utf-8")
+	c.Set(fiber.HeaderContentDisposition, `attachment; filename="member-360-masked.csv"`)
+	return c.Send(buffer.Bytes())
 }
 
 // BeritaAcara Handlers
@@ -798,9 +1013,9 @@ func (h *Handlers) Sync(c *fiber.Ctx) error {
 		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", err.Error())
 	}
 
-	if err := h.services.Sync.Sync(&payload); err != nil {
+	if err := h.services.Sync.Sync(&payload, user.ID, access.CityIDs, access.AllCities); err != nil {
 		log.Printf("Sync Error: %v", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return WriteAPIError(c, fiber.StatusBadRequest, "sync_validation_failed", err.Error())
 	}
 
 	return c.JSON(fiber.Map{"success": true})

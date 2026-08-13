@@ -68,7 +68,7 @@ func main() {
 	jobService := service.NewJobService(jobRepo)
 	moduleService := service.NewModuleService(moduleRepo)
 	aiService := service.NewAIService(cfg)
-	syncService := service.NewSyncService(db, cityRepo, memberRepo, beritaRepo, jurnalRepo, linkRepo)
+	syncService := service.NewSyncService(db)
 	locationService := service.NewLocationService(locationRepo)
 
 	services := &service.Service{

@@ -53,7 +53,7 @@ func (r *cityRepository) RecalculateStats() error {
 	query := `
 		UPDATE cities c
 		SET 
-			members_count = COALESCE((SELECT COUNT(*) FROM members m WHERE m.city_id = c.id), 0),
+			members_count = COALESCE((SELECT COUNT(*) FROM members m WHERE m.city_id = c.id AND m.status <> 'archived'), 0),
 			berita_count = COALESCE((SELECT COUNT(*) FROM berita_acaras b WHERE b.city_id = c.id), 0),
 			jurnal_pa_count = COALESCE((SELECT COUNT(*) FROM jurnal_pas j WHERE j.city_id = c.id), 0),
 			journals_count = COALESCE((SELECT COUNT(*) FROM berita_acaras b WHERE b.city_id = c.id), 0) + 

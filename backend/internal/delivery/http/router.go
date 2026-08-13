@@ -73,9 +73,15 @@ func SetupRouter(app *fiber.App, handlers *Handlers, cfg *config.Config) {
 
 	// Members
 	protected.Get("/members", handlers.RequirePermission("member.read"), handlers.GetMembers)
+	protected.Get("/members/export", handlers.RequirePermission("member.export"), handlers.ExportMembers)
+	protected.Get("/members/duplicate-reviews", handlers.RequirePermission("member.history.read"), handlers.GetMemberDuplicateReviews)
+	protected.Put("/members/duplicate-reviews/:id", handlers.RequirePermission("member.write"), handlers.DecideMemberDuplicateReview)
+	protected.Post("/members/duplicates", handlers.RequirePermission("member.write"), handlers.CheckMemberDuplicates)
 	protected.Post("/members", handlers.RequirePermission("member.write"), handlers.CreateMember)
+	protected.Get("/members/:id", handlers.RequirePermission("member.read"), handlers.GetMember)
+	protected.Get("/members/:id/history", handlers.RequirePermission("member.history.read"), handlers.GetMemberHistory)
 	protected.Put("/members/:id", handlers.RequirePermission("member.write"), handlers.UpdateMember)
-	protected.Delete("/members/:id", handlers.RequirePermission("member.delete"), handlers.DeleteMember)
+	protected.Post("/members/:id/archive", handlers.RequirePermission("member.archive"), handlers.ArchiveMember)
 
 	// Berita Acara
 	protected.Get("/berita", handlers.RequirePermission("event.read"), handlers.GetBerita)
