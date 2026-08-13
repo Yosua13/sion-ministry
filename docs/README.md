@@ -18,6 +18,8 @@ Folder ini memecah rencana implementasi menjadi issue GitHub mandiri. Buat satu 
 ## Panduan Testing
 
 - [Manual testing scoped RBAC dan multi-kota](testing-scoped-rbac-multi-kota.md) — checklist UAT issue #9, termasuk isolasi lintas kota, jurnal mentor/mentee, sesi, audit, storage, serta rollback migrasi.
+- [Kontrak Data dan API Member 360](member-360-api.md) — taxonomy, schema, validation, dedupe, masking, retention, dan API issue #10.
+- [Manual testing Member 360](testing-member-360.md) — checklist UAT dedupe, scope, history, consent, archive, export, dan migration report issue #10.
 
 ## Aturan Penutupan Issue
 

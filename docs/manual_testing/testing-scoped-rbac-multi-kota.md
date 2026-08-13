@@ -176,7 +176,7 @@ Jangan menempelkan token ke issue GitHub, screenshot publik, atau chat. Token pe
 | SCOPE-02 | Daftar anggota berscope | Login sebagai Pekerja A dan buka daftar anggota. | Hanya anggota Kota A yang tampil. | NOT RUN |
 | SCOPE-03 | Buat anggota lintas kota | Sebagai Pekerja A, kirim `POST /api/members` dengan `cityId` Kota B. | Backend mengembalikan `403 scope_forbidden`; record tidak dibuat. | NOT RUN |
 | SCOPE-04 | Ubah ID lintas kota | Sebagai Pekerja A, kirim `PUT /api/members/<ID_ANGGOTA_B>`. | Backend mengembalikan `403`; data Anggota B tidak berubah. | NOT RUN |
-| SCOPE-05 | Hapus ID lintas kota | Sebagai Pekerja A, kirim `DELETE /api/members/<ID_ANGGOTA_B>`. | Backend mengembalikan `403`; Anggota B tetap ada. | NOT RUN |
+| SCOPE-05 | Archive ID lintas kota | Sebagai Pekerja A, kirim `POST /api/members/<ID_ANGGOTA_B>/archive` dengan alasan valid. | Backend mengembalikan `403`; Anggota B tetap aktif. | NOT RUN |
 | SCOPE-06 | Event lintas kota | Sebagai Pekerja A, coba membuat/menghapus kegiatan Kota B dengan ID langsung. | Backend menolak `403`; kegiatan Kota B tidak berubah. | NOT RUN |
 | SCOPE-07 | Offline sync lintas kota | Ubah payload `POST /api/sync` sehingga item member/event menunjuk Kota B. | Seluruh request ditolak; tidak ada item lintas kota yang tersimpan. | NOT RUN |
 | SCOPE-08 | Scope admin organization | Login Admin UAT dan buka kota/anggota kedua kota. | Admin dapat melihat Kota A dan Kota B karena assignment organization aktif. | NOT RUN |
