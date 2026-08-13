@@ -55,8 +55,9 @@ func TestScopedAccessIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	menteeA := models.Member{ID: "mentee-a-" + suffix, Name: "Mentee A", CityID: cityA.ID, Status: "active", UserID: testStringPointer(memberUser.ID), MentorUserID: testStringPointer(worker.ID)}
-	menteeB := models.Member{ID: "mentee-b-" + suffix, Name: "Mentee B", CityID: cityB.ID, Status: "active"}
+	joinedOn := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	menteeA := models.Member{ID: "mentee-a-" + suffix, Name: "Mentee A", NormalizedName: "mentee a", NormalizedPhone: "", NormalizedEmail: "", CityID: cityA.ID, PrimaryServicePointID: cityA.ID, Status: "active", JoinedOn: joinedOn, Version: 1, ConsentStatus: "unknown", CommunicationPreferences: []string{}, UserID: testStringPointer(memberUser.ID), MentorUserID: testStringPointer(worker.ID)}
+	menteeB := models.Member{ID: "mentee-b-" + suffix, Name: "Mentee B", NormalizedName: "mentee b", NormalizedPhone: "", NormalizedEmail: "", CityID: cityB.ID, PrimaryServicePointID: cityB.ID, Status: "active", JoinedOn: joinedOn, Version: 1, ConsentStatus: "unknown", CommunicationPreferences: []string{}}
 	if err := tx.Create(&menteeA).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +83,16 @@ func TestScopedAccessIntegration(t *testing.T) {
 	}
 	if policy.CanAccessMember(workerAccess, &worker, &menteeB, false) {
 		t.Fatal("worker Kota A must not read or guess a member in Kota B")
+	}
+	crossCitySync := &models.SyncPayload{PendingChanges: []models.SyncItem{{
+		ID: menteeB.ID, ItemType: "member", Action: "update", Data: models.Member{
+			ID: menteeB.ID, Name: "Forged update", CityID: cityA.ID, PrimaryServicePointID: cityA.ID,
+			NormalizedName: "forged update", NormalizedPhone: "", NormalizedEmail: "", JoinedOn: joinedOn,
+			Status: "active", Version: 1, ConsentStatus: "unknown", CommunicationPreferences: []string{},
+		},
+	}}}
+	if err := policy.ValidateSync(workerAccess, &worker, crossCitySync); err == nil {
+		t.Fatal("worker Kota A must not update a Kota B member by forging the payload city")
 	}
 	if !policy.CanAccessJournal(workerAccess, &worker, &journalA, false) {
 		t.Fatal("assigned mentor must read the active mentee journal")

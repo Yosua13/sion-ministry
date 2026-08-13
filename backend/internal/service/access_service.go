@@ -266,17 +266,36 @@ func (s *accessService) ValidateSync(access *models.AccessContext, user *models.
 				return errors.New("tidak memiliki izin menulis anggota")
 			}
 			if item.Action == "delete" {
+				if !s.HasPermission(access, "member.archive") {
+					return errors.New("tidak memiliki izin mengarsipkan anggota")
+				}
 				var existing models.Member
 				if err := s.db.First(&existing, "id = ?", item.ID).Error; err != nil || !s.CanAccessMember(access, user, &existing, true) {
 					return errors.New("anggota berada di luar scope sinkronisasi")
 				}
+				member, err := decodeData[models.Member](item.Data)
+				if err != nil || len([]rune(strings.TrimSpace(member.ArchiveReason))) < 10 {
+					return errors.New("archive member membutuhkan archiveReason minimal 10 karakter")
+				}
+				item.Data = member
 				continue
 			}
 			member, err := decodeData[models.Member](item.Data)
 			if err != nil || !s.CanAccessCity(access, member.CityID) {
 				return errors.New("kota anggota berada di luar scope sinkronisasi")
 			}
-			if !s.HasRole(access, "admin") {
+			if item.Action == "update" {
+				var existing models.Member
+				if err := s.db.First(&existing, "id = ?", item.ID).Error; err != nil || !s.CanAccessMember(access, user, &existing, true) {
+					return errors.New("anggota berada di luar scope sinkronisasi")
+				}
+				member.ID = item.ID
+				if !s.HasRole(access, "admin") {
+					member.UserID = existing.UserID
+					member.MentorUserID = existing.MentorUserID
+					member.MentorName = existing.MentorName
+				}
+			} else if !s.HasRole(access, "admin") {
 				member.UserID = nil
 				member.MentorUserID = stringPointer(user.ID)
 			}
@@ -461,7 +480,21 @@ func (s *accessService) AssignMentor(memberID, mentorUserID, memberUserID string
 		}
 		updates["user_id"] = memberUserID
 	}
-	if err := s.db.Model(&models.Member{}).Where("id = ?", memberID).Updates(updates).Error; err != nil {
+	if member.Status == "archived" {
+		return errors.New("anggota yang telah diarsipkan tidak dapat diubah")
+	}
+	updates["version"] = gorm.Expr("version + 1")
+	updates["updated_at"] = gorm.Expr("NOW()")
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.Member{}).Where("id = ?", memberID).Updates(updates).Error; err != nil {
+			return err
+		}
+		histories := []models.MemberHistory{newMemberHistory(memberID, actor.ID, "updated", "mentor", valueOrEmpty(member.MentorUserID), mentorUserID, "Penugasan melalui Manajemen User")}
+		if memberUserID != "" && valueOrEmpty(member.UserID) != memberUserID {
+			histories = append(histories, newMemberHistory(memberID, actor.ID, "updated", "user", valueOrEmpty(member.UserID), memberUserID, "Penautan akun Member 360"))
+		}
+		return tx.Create(&histories).Error
+	}); err != nil {
 		return err
 	}
 	s.RecordAudit(actor.ID, "mentorship.assigned", "member", memberID, "city", member.CityID, "success", "", "", map[string]any{"mentorUserId": mentorUserID, "memberUserId": memberUserID})

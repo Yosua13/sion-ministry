@@ -18,6 +18,8 @@ Sistem memproses data anggota, jurnal, donasi, dan lamaran. Fondasi keamanan, up
 - Docker, CI lint/build/test/migration/scan, staging, structured log request ID, error monitoring, backup/restore runbook.
 - Automated test minimum untuk auth, policy negatif, dan upload validation.
 
+Panduan pengujian manual UAT lengkap tersedia di [Panduan Manual Testing Security & Delivery Foundation](../manual_testing/01-testing-security-delivery-foundation.md).
+
 ## Acceptance Criteria
 
 - [x] Tidak ada password, token, API key, atau akun default yang dapat digunakan dari repository/frontend.

@@ -222,22 +222,6 @@ export default function App() {
 
   // --- CRUD Handler proxies ---
 
-  // Members
-  const handleAddMember = (m: Omit<Member, "id">) => {
-    SionDatabase.addMember(m);
-    refreshData();
-  };
-
-  const handleUpdateMember = (m: Member) => {
-    SionDatabase.updateMember(m);
-    refreshData();
-  };
-
-  const handleDeleteMember = (id: string) => {
-    SionDatabase.deleteMember(id);
-    refreshData();
-  };
-
   // Berita Acara
   const handleAddBerita = (b: Omit<BeritaAcara, "id" | "synced" | "action">) => {
     SionDatabase.addBerita(b);
@@ -354,11 +338,8 @@ export default function App() {
       case "members":
         return (
           <Members
-            members={members}
             cities={cities}
-            onAddMember={handleAddMember}
-            onUpdateMember={handleUpdateMember}
-            onDeleteMember={handleDeleteMember}
+            onMembersChanged={() => SionDatabase.fetchFromCloud().then(refreshData)}
           />
         );
       case "berita":

@@ -1,4 +1,4 @@
-import { Member, BeritaAcara, JurnalPA, DonationCampaign, DonationRecord, City, DiscipleshipLink, DiscipleshipModule, SyncPendingChange, SyncState, JobOpportunity, JobApplication, AuthRole, AuthSession, AuthUser, AccessContext, RoleAssignment, ScopeCatalog, AuditLog, DeviceSession } from "../types";
+import { Member, MemberDuplicateCandidate, MemberHistoryResult, MemberListResult, BeritaAcara, JurnalPA, DonationCampaign, DonationRecord, City, DiscipleshipLink, DiscipleshipModule, SyncPendingChange, SyncState, JobOpportunity, JobApplication, AuthRole, AuthSession, AuthUser, AccessContext, RoleAssignment, ScopeCatalog, AuditLog, DeviceSession } from "../types";
 import { initialCities, initialModules, initialMembers, initialBeritaAcara, initialJurnalPA, initialDonationCampaigns, initialLinks, initialJobs } from "../data/initialData";
 
 const STORAGE_KEYS = {
@@ -244,7 +244,84 @@ export class SionDatabase {
   }
 
   static getScopedMembers(): Promise<Member[]> {
-    return this.authenticatedJson<Member[]>("/api/members");
+    return this.authenticatedJson<MemberListResult>("/api/members?pageSize=100").then((result) => result.items);
+  }
+
+  private static async memberJson<T>(url: string, init: RequestInit = {}): Promise<T> {
+    const token = this.getAuthToken();
+    if (!token) throw new Error("Sesi tidak ditemukan. Silakan login kembali.");
+    const response = await fetch(url, {
+      ...init,
+      headers: {
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...init.headers,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) {
+      let payload: any = {};
+      try { payload = await response.json(); } catch { /* response tanpa JSON */ }
+      const error: any = new Error(payload?.error?.message || "Operasi Member 360 gagal diproses.");
+      error.code = payload?.error?.code;
+      error.fields = payload?.fields || {};
+      error.candidates = payload?.candidates || [];
+      error.status = response.status;
+      throw error;
+    }
+    if (response.status === 204) return undefined as T;
+    return response.json() as Promise<T>;
+  }
+
+  static listMembers(params: { page?: number; pageSize?: number; q?: string; cityId?: string; status?: string; includeArchived?: boolean } = {}): Promise<MemberListResult> {
+    const query = new URLSearchParams();
+    query.set("page", String(params.page || 1));
+    query.set("pageSize", String(params.pageSize || 12));
+    if (params.q?.trim()) query.set("q", params.q.trim());
+    if (params.cityId) query.set("cityId", params.cityId);
+    if (params.status) query.set("status", params.status);
+    if (params.includeArchived) query.set("includeArchived", "true");
+    return this.memberJson<MemberListResult>(`/api/members?${query.toString()}`);
+  }
+
+  static checkMemberDuplicates(member: Partial<Member>, excludeId?: string): Promise<MemberDuplicateCandidate[]> {
+    const suffix = excludeId ? `?excludeId=${encodeURIComponent(excludeId)}` : "";
+    return this.memberJson<{ candidates: MemberDuplicateCandidate[] }>(`/api/members/duplicates${suffix}`, {
+      method: "POST", body: JSON.stringify(member),
+    }).then((result) => result.candidates);
+  }
+
+  static createMember360(member: Omit<Member, "id">): Promise<Member> {
+    return this.memberJson<Member>("/api/members", { method: "POST", body: JSON.stringify(member) });
+  }
+
+  static updateMember360(member: Member): Promise<Member> {
+    return this.memberJson<Member>(`/api/members/${member.id}`, { method: "PUT", body: JSON.stringify(member) });
+  }
+
+  static archiveMember(id: string, reason: string): Promise<void> {
+    return this.memberJson<void>(`/api/members/${id}/archive`, { method: "POST", body: JSON.stringify({ reason }) });
+  }
+
+  static getMemberHistory(id: string): Promise<MemberHistoryResult> {
+    return this.memberJson<MemberHistoryResult>(`/api/members/${id}/history`);
+  }
+
+  static async exportMembersMasked(reason: string, filters: { q?: string; cityId?: string; status?: string } = {}): Promise<void> {
+    const token = this.getAuthToken();
+    if (!token) throw new Error("Sesi tidak ditemukan. Silakan login kembali.");
+    const query = new URLSearchParams({ reason });
+    if (filters.q?.trim()) query.set("q", filters.q.trim());
+    if (filters.cityId) query.set("cityId", filters.cityId);
+    if (filters.status) query.set("status", filters.status);
+    const response = await fetch(`/api/members/export?${query.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) throw new Error(await this.readApiError(response) || "Export anggota gagal.");
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "member-360-masked.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   static getScopeCatalog(): Promise<ScopeCatalog> {
@@ -320,7 +397,7 @@ export class SionDatabase {
       const [cities, modules, members, berita, journals, campaigns, donations, links, jobs, applications] = await Promise.all([
         fetch("/api/cities", requestInit).then(res => res.ok ? res.json() : null),
         fetch("/api/modules", requestInit).then(res => res.ok ? res.json() : null),
-        fetch("/api/members", requestInit).then(res => res.ok ? res.json() : null),
+        fetch("/api/members?pageSize=100", requestInit).then(res => res.ok ? res.json() : null),
         fetch("/api/berita", requestInit).then(res => res.ok ? res.json() : null),
         fetch("/api/jurnal-pa", requestInit).then(res => res.ok ? res.json() : null),
         fetch("/api/campaigns", requestInit).then(res => res.ok ? res.json() : null),
@@ -332,7 +409,7 @@ export class SionDatabase {
 
       if (cities) localStorage.setItem(STORAGE_KEYS.CITIES, JSON.stringify(cities));
       if (modules) localStorage.setItem(STORAGE_KEYS.MODULES, JSON.stringify(modules));
-      if (members) localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(this.normalizeMembers(members)));
+      if (members?.items) localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(this.normalizeMembers(members.items)));
       if (berita) localStorage.setItem(STORAGE_KEYS.BERITA, JSON.stringify(berita));
       if (journals) localStorage.setItem(STORAGE_KEYS.JURNAL_PA, JSON.stringify(journals));
       if (campaigns) localStorage.setItem(STORAGE_KEYS.CAMPAIGNS, JSON.stringify(campaigns));
@@ -451,74 +528,6 @@ export class SionDatabase {
   static getMembers(): Member[] {
     this.init();
     return JSON.parse(localStorage.getItem(STORAGE_KEYS.MEMBERS) || "[]");
-  }
-
-  static saveMembers(members: Member[]) {
-    localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(members));
-    this.recalculateCityStats();
-  }
-
-  static addMember(member: Omit<Member, "id">): Member {
-    const members = this.getMembers();
-    const newMember: Member = {
-      ...member,
-      id: "mem-" + Date.now(),
-    };
-    members.unshift(newMember);
-    this.saveMembers(members);
-
-    // Write to Go backend
-    const syncState = this.getSyncState();
-    if (syncState.isOnline) {
-      this.apiRequest("/api/members", "POST", newMember).then((ok) => {
-        if (!ok) {
-          this.addPendingChange({ id: newMember.id, itemType: "member", action: "create", data: newMember });
-        }
-      });
-    } else {
-      this.addPendingChange({ id: newMember.id, itemType: "member", action: "create", data: newMember });
-    }
-
-    return newMember;
-  }
-
-  static updateMember(member: Member): Member {
-    const members = this.getMembers();
-    const updated = members.map((m) => (m.id === member.id ? member : m));
-    this.saveMembers(updated);
-
-    // Write to Go backend
-    const syncState = this.getSyncState();
-    if (syncState.isOnline) {
-      this.apiRequest(`/api/members/${member.id}`, "PUT", member).then((ok) => {
-        if (!ok) {
-          this.addPendingChange({ id: member.id, itemType: "member", action: "update", data: member });
-        }
-      });
-    } else {
-      this.addPendingChange({ id: member.id, itemType: "member", action: "update", data: member });
-    }
-
-    return member;
-  }
-
-  static deleteMember(id: string) {
-    const members = this.getMembers();
-    const memberToDelete = members.find((m) => m.id === id);
-    const updated = members.filter((m) => m.id !== id);
-    this.saveMembers(updated);
-
-    // Write to Go backend
-    const syncState = this.getSyncState();
-    if (syncState.isOnline) {
-      this.apiRequest(`/api/members/${id}`, "DELETE").then((ok) => {
-        if (!ok && memberToDelete) {
-          this.addPendingChange({ id: id, itemType: "member", action: "delete", data: memberToDelete });
-        }
-      });
-    } else if (memberToDelete) {
-      this.addPendingChange({ id: id, itemType: "member", action: "delete", data: memberToDelete });
-    }
   }
 
   // --- Berita Acara CRUD Helpers ---

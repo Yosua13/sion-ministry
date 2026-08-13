@@ -1,6 +1,10 @@
 package models
 
-import "github.com/lib/pq"
+import (
+	"time"
+
+	"github.com/lib/pq"
+)
 
 type User struct {
 	ID           string  `gorm:"primaryKey" json:"id"`
@@ -63,17 +67,112 @@ type DiscipleshipModule struct {
 }
 
 type Member struct {
-	ID                string  `gorm:"primaryKey" json:"id"`
-	Name              string  `json:"name"`
-	CityID            string  `json:"cityId"`
-	CityName          string  `json:"cityName"`
-	Phone             string  `json:"phone"`
-	DiscipleshipStage string  `json:"discipleshipStage"`
-	MentorName        string  `json:"mentorName"`
-	JoinedDate        string  `json:"joinedDate"`
-	Status            string  `json:"status"`
-	UserID            *string `json:"userId,omitempty"`
-	MentorUserID      *string `json:"mentorUserId,omitempty"`
+	ID                       string         `gorm:"primaryKey" json:"id"`
+	Name                     string         `json:"name"`
+	NormalizedName           string         `json:"-"`
+	Email                    string         `json:"email"`
+	NormalizedEmail          string         `json:"-"`
+	Phone                    string         `json:"phone"`
+	NormalizedPhone          string         `json:"-"`
+	CityID                   string         `json:"cityId"`
+	CityName                 string         `json:"cityName"`
+	PrimaryServicePointID    string         `json:"primaryServicePointId"`
+	DiscipleshipStage        string         `json:"discipleshipStage"`
+	MentorName               string         `json:"mentorName"`
+	MentorUserID             *string        `json:"mentorUserId,omitempty"`
+	GroupName                string         `json:"groupName"`
+	JoinedDate               string         `gorm:"column:joined_date" json:"joinedDate"`
+	JoinedOn                 time.Time      `gorm:"type:date" json:"joinedOn"`
+	Status                   string         `json:"status"`
+	UserID                   *string        `json:"userId,omitempty"`
+	OwnerUserID              *string        `json:"ownerUserId,omitempty"`
+	Version                  int            `json:"version"`
+	ConsentStatus            string         `json:"consentStatus"`
+	ConsentSource            string         `json:"consentSource"`
+	ConsentPurpose           string         `json:"consentPurpose"`
+	ConsentRecordedAt        *time.Time     `json:"consentRecordedAt,omitempty"`
+	CommunicationPreferences pq.StringArray `gorm:"type:text[]" json:"communicationPreferences"`
+	ArchivedAt               *time.Time     `json:"archivedAt,omitempty"`
+	ArchivedBy               *string        `json:"archivedBy,omitempty"`
+	ArchiveReason            string         `json:"archiveReason,omitempty"`
+	RetentionUntil           *time.Time     `json:"retentionUntil,omitempty"`
+	CreatedAt                time.Time      `json:"createdAt"`
+	UpdatedAt                time.Time      `json:"updatedAt"`
+	DuplicateOverrideReason  string         `gorm:"-" json:"duplicateOverrideReason,omitempty"`
+}
+
+type MemberHistory struct {
+	ID          string    `gorm:"type:uuid;primaryKey" json:"id"`
+	MemberID    string    `json:"memberId"`
+	ActorUserID *string   `json:"actorUserId,omitempty"`
+	ChangeType  string    `json:"changeType"`
+	FieldName   string    `json:"fieldName"`
+	OldValue    string    `json:"oldValue"`
+	NewValue    string    `json:"newValue"`
+	Reason      string    `json:"reason"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type MemberConsentHistory struct {
+	ID                       string         `gorm:"type:uuid;primaryKey" json:"id"`
+	MemberID                 string         `json:"memberId"`
+	ActorUserID              *string        `json:"actorUserId,omitempty"`
+	ConsentStatus            string         `json:"consentStatus"`
+	CommunicationPreferences pq.StringArray `gorm:"type:text[]" json:"communicationPreferences"`
+	Source                   string         `json:"source"`
+	Purpose                  string         `json:"purpose"`
+	RecordedAt               time.Time      `json:"recordedAt"`
+	CreatedAt                time.Time      `json:"createdAt"`
+}
+
+type MemberDuplicateReview struct {
+	ID                string         `gorm:"type:uuid;primaryKey" json:"id"`
+	MemberID          string         `json:"memberId"`
+	CandidateMemberID string         `json:"candidateMemberId"`
+	MatchReasons      pq.StringArray `gorm:"type:text[]" json:"matchReasons"`
+	Score             int            `json:"score"`
+	OverrideReason    string         `json:"overrideReason"`
+	Status            string         `json:"status"`
+	DecidedBy         *string        `json:"decidedBy,omitempty"`
+	DecidedAt         *time.Time     `json:"decidedAt,omitempty"`
+	DecisionNote      string         `json:"decisionNote"`
+	CreatedAt         time.Time      `json:"createdAt"`
+}
+
+type MemberDuplicateCandidate struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	CityID       string   `json:"cityId"`
+	CityName     string   `json:"cityName"`
+	MaskedPhone  string   `json:"maskedPhone"`
+	MaskedEmail  string   `json:"maskedEmail"`
+	MatchReasons []string `json:"matchReasons"`
+	Score        int      `json:"score"`
+}
+
+type MemberListQuery struct {
+	Page            int
+	PageSize        int
+	Search          string
+	CityID          string
+	Status          string
+	IncludeArchived bool
+	CityIDs         []string
+	AllCities       bool
+	SelfUserID      string
+}
+
+type MemberListResult struct {
+	Items      []Member `json:"items"`
+	Page       int      `json:"page"`
+	PageSize   int      `json:"pageSize"`
+	Total      int64    `json:"total"`
+	TotalPages int      `json:"totalPages"`
+}
+
+type MemberHistoryResult struct {
+	Changes  []MemberHistory        `json:"changes"`
+	Consents []MemberConsentHistory `json:"consents"`
 }
 
 type BeritaAcara struct {

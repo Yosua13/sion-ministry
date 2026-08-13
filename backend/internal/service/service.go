@@ -11,11 +11,17 @@ type CityService interface {
 }
 
 type MemberService interface {
-	GetAll() ([]models.Member, error)
+	List(query models.MemberListQuery) (*models.MemberListResult, error)
 	GetByID(id string) (*models.Member, error)
-	Create(member *models.Member) error
-	Update(member *models.Member) error
-	Delete(id string) error
+	FindDuplicateCandidates(member *models.Member, excludeID string, cityIDs []string, allCities bool) ([]models.MemberDuplicateCandidate, error)
+	Create(member *models.Member, actorID string, cityIDs []string, allCities bool) error
+	Update(member *models.Member, actorID string, cityIDs []string, allCities bool) error
+	Archive(member *models.Member, actorID, reason string) error
+	GetHistory(memberID string) (*models.MemberHistoryResult, error)
+	Export(query models.MemberListQuery) ([]models.Member, error)
+	ListDuplicateReviews(status string, cityIDs []string, allCities bool) ([]models.MemberDuplicateReview, error)
+	GetDuplicateReview(id string) (*models.MemberDuplicateReview, error)
+	DecideDuplicateReview(id, decision, note, actorID string) (*models.MemberDuplicateReview, error)
 }
 
 type BeritaService interface {
@@ -65,7 +71,7 @@ type AIService interface {
 }
 
 type SyncService interface {
-	Sync(payload *models.SyncPayload) error
+	Sync(payload *models.SyncPayload, actorID string, cityIDs []string, allCities bool) error
 }
 
 type AuthService interface {

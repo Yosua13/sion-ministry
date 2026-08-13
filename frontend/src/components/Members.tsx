@@ -1,593 +1,365 @@
-import React, { useState, useMemo } from "react";
-import { 
-  Users, 
-  Search, 
-  Plus, 
-  UserPlus, 
-  Edit, 
-  Trash2, 
-  MapPin, 
-  User, 
-  Phone, 
-  Calendar, 
-  X,
-  Check,
-  Building,
-  Filter,
-  Trash
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  AlertTriangle, Archive, Calendar, ChevronLeft, ChevronRight, Clock3, Download,
+  Edit, History, Loader2, Mail, MapPin, Phone, Plus, RefreshCw, Search, ShieldCheck,
+  User, Users, X,
 } from "lucide-react";
-import { Member, City } from "../types";
-import ConfirmDialog from "./ConfirmDialog";
+import { City, Member, MemberDuplicateCandidate, MemberHistoryResult, MemberListResult } from "../types";
+import { SionDatabase } from "../utils/db";
 
 interface MembersProps {
-  members: Member[];
   cities: City[];
-  onAddMember: (member: Omit<Member, "id">) => void;
-  onUpdateMember: (member: Member) => void;
-  onDeleteMember: (id: string) => void;
+  onMembersChanged?: () => void;
 }
 
-export default function Members({
-  members,
-  cities,
-  onAddMember,
-  onUpdateMember,
-  onDeleteMember
-}: MembersProps) {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCityId, setSelectedCityId] = useState<string>("All");
-  const [selectedStage, setSelectedStage] = useState<string>("All");
-  
-  // Modal states
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingMember, setEditingMember] = useState<Member | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Member | null>(null);
+type EditableStatus = Exclude<Member["status"], "archived">;
+type CommunicationPreference = "whatsapp" | "sms" | "email" | "phone" | "none";
 
-  // Form states
-  const [formName, setFormName] = useState("");
-  const [formCityId, setFormCityId] = useState("");
-  const [formPhone, setFormPhone] = useState("");
-  const [formStage, setFormStage] = useState<Member["discipleshipStage"]>("Jemaat");
-  const [formMentor, setFormMentor] = useState("");
-  const [formStatus, setFormStatus] = useState<Member["status"]>("active");
-  const [formDate, setFormDate] = useState(new Date().toISOString().split("T")[0]);
+interface MemberForm {
+  name: string;
+  email: string;
+  phone: string;
+  cityId: string;
+  discipleshipStage: Member["discipleshipStage"] | "";
+  mentorName: string;
+  groupName: string;
+  joinedDate: string;
+  status: EditableStatus;
+  consentStatus: "unknown" | "granted" | "revoked";
+  consentSource: string;
+  consentPurpose: string;
+  communicationPreferences: CommunicationPreference[];
+  duplicateOverrideReason: string;
+}
 
-  // Validation and alert states
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
+const emptyPage: MemberListResult = { items: [], page: 1, pageSize: 12, total: 0, totalPages: 0 };
+const lifecycleStatuses: EditableStatus[] = ["guest", "prospect", "active", "inactive", "moved", "deceased"];
+const filterStatuses: Member["status"][] = [...lifecycleStatuses, "archived"];
+const preferenceOptions: Array<{ value: CommunicationPreference; label: string }> = [
+  { value: "whatsapp", label: "WhatsApp" }, { value: "sms", label: "SMS" },
+  { value: "email", label: "Email" }, { value: "phone", label: "Telepon" }, { value: "none", label: "Tidak dihubungi" },
+];
 
-  const stages: Member["discipleshipStage"][] = ["Pekerja", "Jemaat"];
+const initialForm = (): MemberForm => ({
+  name: "", email: "", phone: "", cityId: "", discipleshipStage: "", mentorName: "", groupName: "",
+  joinedDate: new Date().toISOString().slice(0, 10), status: "prospect", consentStatus: "unknown",
+  consentSource: "", consentPurpose: "", communicationPreferences: [], duplicateOverrideReason: "",
+});
 
-  // Filter members
-  const filteredMembers = useMemo(() => {
-    return members.filter((m) => {
-      const matchesSearch = 
-        m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        m.phone.includes(searchTerm) ||
-        m.mentorName.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      const matchesCity = selectedCityId === "All" || m.cityId === selectedCityId;
-      const matchesStage = selectedStage === "All" || m.discipleshipStage === selectedStage;
+const statusLabel: Record<Member["status"], string> = {
+  guest: "Tamu", prospect: "Prospek", active: "Aktif", inactive: "Tidak Aktif",
+  moved: "Pindah", deceased: "Meninggal", archived: "Diarsipkan",
+};
 
-      return matchesSearch && matchesCity && matchesStage;
+const statusClass = (status: Member["status"]) => {
+  if (status === "active") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "archived" || status === "deceased") return "border-slate-300 bg-slate-100 text-slate-600";
+  if (status === "prospect" || status === "guest") return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-blue-200 bg-blue-50 text-blue-700";
+};
+
+export default function Members({ cities, onMembersChanged }: MembersProps) {
+  const [result, setResult] = useState<MemberListResult>(emptyPage);
+  const [search, setSearch] = useState("");
+  const [cityId, setCityId] = useState("");
+  const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<Member | null>(null);
+  const [form, setForm] = useState<MemberForm>(initialForm);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [duplicates, setDuplicates] = useState<MemberDuplicateCandidate[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [detail, setDetail] = useState<Member | null>(null);
+  const [history, setHistory] = useState<MemberHistoryResult | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<Member | null>(null);
+  const [archiveReason, setArchiveReason] = useState("");
+  const [exportReason, setExportReason] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [permissions, setPermissions] = useState<string[]>([]);
+
+  const loadMembers = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      setResult(await SionDatabase.listMembers({ page, pageSize: 12, q: search, cityId, status, includeArchived: status === "archived" }));
+    } catch (err: any) {
+      setError(err.message || "Daftar Member 360 gagal dimuat.");
+    } finally {
+      setLoading(false);
+    }
+  }, [page, search, cityId, status]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(loadMembers, 300);
+    return () => window.clearTimeout(timeout);
+  }, [loadMembers]);
+
+  useEffect(() => {
+    SionDatabase.getAccessContext().then((access) => setPermissions(access.permissions)).catch(() => setPermissions([]));
+  }, []);
+
+  const canWrite = permissions.includes("member.write");
+  const canArchive = permissions.includes("member.archive");
+  const canReadHistory = permissions.includes("member.history.read");
+  const canExport = permissions.includes("member.export");
+
+  const updateForm = <K extends keyof MemberForm>(field: K, value: MemberForm[K]) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    setFormErrors((current) => {
+      const next = { ...current };
+      delete next[field];
+      return next;
     });
-  }, [members, searchTerm, selectedCityId, selectedStage]);
-
-  const mentorNameSuggestions = useMemo(() => {
-    const names = [
-      ...members.map((member) => member.name),
-      ...members.map((member) => member.mentorName)
-    ]
-      .map((name) => name.trim())
-      .filter(Boolean);
-
-    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b, "id-ID"));
-  }, [members]);
-
-  const formatPhone = (val: string) => {
-    let digits = val.replace(/\D/g, "");
-    if (digits.length === 0) return "";
-    if (digits.startsWith("0")) {
-      digits = "62" + digits.substring(1);
-    } else if (!digits.startsWith("62")) {
-      digits = "62" + digits;
-    }
-    digits = digits.substring(0, 14);
-    let formatted = "+62";
-    if (digits.length > 2) {
-      formatted += " " + digits.substring(2, 5);
-    }
-    if (digits.length > 5) {
-      formatted += "-" + digits.substring(5, 9);
-    }
-    if (digits.length > 9) {
-      formatted += "-" + digits.substring(9, 14);
-    }
-    return formatted;
   };
 
-  // Handle open modal for adding
-  const handleOpenAddModal = () => {
-    setEditingMember(null);
-    setFormName("");
-    setFormCityId("");
-    setFormPhone("");
-    setFormStage("" as any);
-    setFormMentor("");
-    setFormStatus("active");
-    setFormDate("");
-    setErrors({});
-    setIsModalOpen(true);
+  const openCreate = () => {
+    setEditing(null);
+    setForm(initialForm());
+    setFormErrors({});
+    setDuplicates([]);
+    setModalOpen(true);
   };
 
-  // Handle open modal for editing
-  const handleOpenEditModal = (member: Member) => {
-    setEditingMember(member);
-    setFormName(member.name);
-    setFormCityId(member.cityId);
-    setFormPhone(member.phone);
-    setFormStage(member.discipleshipStage);
-    setFormMentor(member.mentorName);
-    setFormStatus(member.status);
-    setFormDate(member.joinedDate);
-    setErrors({});
-    setIsModalOpen(true);
+  const openEdit = (member: Member) => {
+    setEditing(member);
+    setForm({
+      name: member.name, email: member.email || "", phone: member.phone, cityId: member.cityId,
+      discipleshipStage: member.discipleshipStage, mentorName: member.mentorName || "", groupName: member.groupName || "",
+      joinedDate: member.joinedDate || member.joinedOn?.slice(0, 10) || "", status: member.status === "archived" ? "inactive" : member.status,
+      consentStatus: member.consentStatus || "unknown", consentSource: member.consentSource || "",
+      consentPurpose: member.consentPurpose || "", communicationPreferences: (member.communicationPreferences || []) as CommunicationPreference[],
+      duplicateOverrideReason: "",
+    });
+    setFormErrors({});
+    setDuplicates([]);
+    setModalOpen(true);
   };
 
-  // Handle submit form
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Inline validation
-    const tempErrors: Record<string, string> = {};
-    if (!formName.trim()) tempErrors.name = "Nama lengkap wajib diisi";
-    if (!formCityId) tempErrors.cityId = "Pos kota pelayanan wajib dipilih";
-    
-    const phoneDigits = formPhone.replace(/\D/g, "");
-    if (!formPhone) {
-      tempErrors.phone = "No. Telepon / WhatsApp wajib diisi";
-    } else if (phoneDigits.length < 12 || phoneDigits.length > 14) {
-      tempErrors.phone = "Nomor HP harus minimal input 11 angka dan maksimal input 13 angka";
+  const validate = () => {
+    const next: Record<string, string> = {};
+    if (form.name.trim().length < 2) next.name = "Nama lengkap minimal 2 karakter.";
+    if (!form.cityId) next.cityId = "Primary service point wajib dipilih.";
+    if (!form.phone.trim()) next.phone = "Nomor telepon wajib diisi.";
+    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) next.email = "Format email tidak valid.";
+    if (!form.discipleshipStage) next.discipleshipStage = "Tahap pemuridan wajib dipilih.";
+    if (!form.joinedDate) next.joinedDate = "Tanggal mulai binaan wajib diisi.";
+    if (form.consentStatus === "granted") {
+      if (!form.consentSource.trim()) next.consentSource = "Sumber consent wajib diisi.";
+      if (!form.consentPurpose.trim()) next.consentPurpose = "Tujuan pemrosesan wajib diisi.";
+      if (form.communicationPreferences.length === 0) next.communicationPreferences = "Pilih minimal satu preferensi.";
     }
+    if (duplicates.length > 0 && form.duplicateOverrideReason.trim().length < 10) {
+      next.duplicateOverrideReason = "Alasan melanjutkan data duplikat minimal 10 karakter.";
+    }
+    setFormErrors(next);
+    return Object.keys(next).length === 0;
+  };
 
-    if (!formStage) tempErrors.stage = "Tahap pemuridan wajib dipilih";
-    if (!formMentor.trim()) tempErrors.mentor = "Nama mentor pembimbing wajib diisi";
-    if (!formDate) tempErrors.date = "Tanggal mulai binaan wajib dipilih";
+  const buildPayload = (): Omit<Member, "id"> => {
+    const city = cities.find((item) => item.id === form.cityId);
+    return {
+      name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim(), cityId: form.cityId,
+      cityName: city?.name || "", primaryServicePointId: form.cityId,
+      discipleshipStage: form.discipleshipStage as Member["discipleshipStage"], mentorName: form.mentorName.trim(),
+      groupName: form.groupName.trim(), joinedDate: form.joinedDate, status: form.status,
+      consentStatus: form.consentStatus, consentSource: form.consentSource.trim(), consentPurpose: form.consentPurpose.trim(),
+      communicationPreferences: form.communicationPreferences, duplicateOverrideReason: form.duplicateOverrideReason.trim(),
+      version: editing?.version || 1,
+    };
+  };
 
-    if (Object.keys(tempErrors).length > 0) {
-      setErrors(tempErrors);
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!validate()) return;
+    setSaving(true);
+    setError("");
+    try {
+      const payload = buildPayload();
+      const candidates = await SionDatabase.checkMemberDuplicates(payload, editing?.id);
+      if (candidates.length > 0 && form.duplicateOverrideReason.trim().length < 10) {
+        setDuplicates(candidates);
+        setFormErrors({ duplicateOverrideReason: "Tinjau kandidat dan isi alasan jika data baru memang harus dilanjutkan." });
+        return;
+      }
+      if (editing) await SionDatabase.updateMember360({ ...editing, ...payload, id: editing.id });
+      else await SionDatabase.createMember360(payload);
+      setModalOpen(false);
+      setNotice(editing ? "Profil Member 360 berhasil diperbarui." : "Member baru berhasil disimpan.");
+      await loadMembers();
+      onMembersChanged?.();
+    } catch (err: any) {
+      if (err.fields) setFormErrors(err.fields);
+      if (err.candidates?.length) setDuplicates(err.candidates);
+      setError(err.message || "Data anggota gagal disimpan.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openHistory = async (member: Member) => {
+    setDetail(member);
+    setHistory(null);
+    setHistoryLoading(true);
+    try {
+      setHistory(await SionDatabase.getMemberHistory(member.id));
+    } catch (err: any) {
+      setError(err.message || "Histori anggota gagal dimuat.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleArchive = async () => {
+    if (!archiveTarget) return;
+    if (archiveReason.trim().length < 10) {
+      setError("Alasan archive minimal 10 karakter.");
       return;
     }
-
-    
-    setErrors({});
-
-    const cityObj = cities.find((c) => c.id === formCityId);
-    const cityName = cityObj ? cityObj.name : "";
-
-    if (editingMember) {
-      onUpdateMember({
-        ...editingMember,
-        name: formName,
-        cityId: formCityId,
-        cityName: cityName,
-        phone: formPhone,
-        discipleshipStage: formStage,
-        mentorName: formMentor,
-        joinedDate: formDate,
-        status: formStatus,
-      });
-    } else {
-      onAddMember({
-        name: formName,
-        cityId: formCityId,
-        cityName: cityName,
-        phone: formPhone,
-        discipleshipStage: formStage,
-        mentorName: formMentor,
-        joinedDate: formDate,
-        status: formStatus,
-      });
+    setSaving(true);
+    try {
+      await SionDatabase.archiveMember(archiveTarget.id, archiveReason);
+      setArchiveTarget(null);
+      setArchiveReason("");
+      setNotice("Member berhasil diarsipkan dan tetap tersedia pada histori/audit.");
+      await loadMembers();
+      onMembersChanged?.();
+    } catch (err: any) {
+      setError(err.message || "Archive anggota gagal.");
+    } finally {
+      setSaving(false);
     }
-
-    setIsModalOpen(false);
-
-    // Show centered success alert
-    setShowSuccessAlert(true);
-    setTimeout(() => {
-      setShowSuccessAlert(false);
-    }, 2000);
   };
 
-  const handleConfirmDelete = () => {
-    if (!deleteTarget) return;
-    onDeleteMember(deleteTarget.id);
-    setDeleteTarget(null);
+  const handleExport = async () => {
+    if (exportReason.trim().length < 10) {
+      setError("Alasan export minimal 10 karakter agar aktivitas dapat diaudit.");
+      return;
+    }
+    setExporting(true);
+    try {
+      await SionDatabase.exportMembersMasked(exportReason.trim(), { q: search, cityId, status });
+      setNotice("Export ter-mask berhasil diunduh dan dicatat di audit log.");
+    } catch (err: any) {
+      setError(err.message || "Export anggota gagal.");
+    } finally {
+      setExporting(false);
+    }
   };
 
-  const getStageStyles = (stage: Member["discipleshipStage"]) => {
-    switch (stage) {
-      case "Pekerja":
-        return "bg-indigo-50 text-indigo-700 border-indigo-200";
-      case "Jemaat":
-        return "bg-emerald-50 text-emerald-700 border-emerald-200";
-      default:
-        return "bg-slate-100 text-slate-700 border-slate-200";
+  const togglePreference = (value: CommunicationPreference) => {
+    if (value === "none") {
+      updateForm("communicationPreferences", form.communicationPreferences.includes("none") ? [] : ["none"]);
+      return;
     }
+    const withoutNone = form.communicationPreferences.filter((item) => item !== "none");
+    updateForm("communicationPreferences", withoutNone.includes(value) ? withoutNone.filter((item) => item !== value) : [...withoutNone, value]);
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header filter tools */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-100 material-shadow-1 space-y-4">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="space-y-5">
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <h2 className="font-display font-bold text-lg text-slate-900">Database Jemaat & Murid</h2>
-            <p className="text-xs text-slate-400 mt-1">Kelola data pembinaan rohani, mentor, dan kemajuan penjangkauan jemaat</p>
+            <div className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-bold text-indigo-700"><ShieldCheck className="h-3.5 w-3.5" />Member 360 · scoped & audited</div>
+            <h2 className="mt-3 text-xl font-bold text-slate-950">Data Jemaat dan Histori Pelayanan</h2>
+            <p className="mt-1 text-sm text-slate-500">Pencarian, filter, dan pagination diproses server sesuai scope akun.</p>
           </div>
-
-          <button
-            onClick={handleOpenAddModal}
-            className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-indigo-600/15"
-          >
-            <UserPlus className="h-4 w-4" />
-            <span>Tambah Jemaat Baru</span>
-          </button>
+          {canWrite && <button onClick={openCreate} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-500"><Plus className="h-4 w-4" />Tambah Member</button>}
         </div>
 
-        {/* Search and Advanced Filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
-          {/* Search bar */}
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Cari nama, mentor, telepon..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all placeholder:text-slate-400"
-            />
-          </div>
-
-          {/* Filter City */}
-          <div className="relative">
-            <select
-              value={selectedCityId}
-              onChange={(e) => setSelectedCityId(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-700"
-            >
-              <option value="All">Semua Kota (Wilayah)</option>
-              {cities.map((city) => (
-                <option key={city.id} value={city.id}>{city.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Filter Stage */}
-          <div className="relative">
-            <select
-              value={selectedStage}
-              onChange={(e) => setSelectedStage(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-700"
-            >
-              <option value="All">Semua Tahapan Pemuridan</option>
-              {stages.map((stage) => (
-                <option key={stage} value={stage}>{stage}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Display metrics metadata */}
-          <div className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-2 flex items-center justify-between text-xs text-slate-500">
-            <span className="font-semibold text-slate-700">Hasil Pencarian:</span>
-            <span className="font-mono bg-indigo-50 text-indigo-600 font-bold px-2 py-0.5 rounded">
-              {filteredMembers.length} Jemaat
-            </span>
-          </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <label className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Cari nama, phone, email..." className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm" /></label>
+          <select value={cityId} onChange={(event) => { setCityId(event.target.value); setPage(1); }} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="">Semua service point</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}</select>
+          <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm"><option value="">Semua lifecycle</option>{(canArchive || canReadHistory ? filterStatuses : lifecycleStatuses).map((item) => <option key={item} value={item}>{statusLabel[item]}</option>)}</select>
+          <button onClick={loadMembers} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50"><RefreshCw className="h-4 w-4" />Muat Ulang</button>
         </div>
-      </div>
 
-      {/* Member cards layout */}
-      {filteredMembers.length === 0 ? (
-        <div className="bg-white rounded-3xl p-12 border border-slate-100 text-center material-shadow-1 space-y-3">
-          <Users className="h-10 w-10 text-slate-300 mx-auto" />
-          <h3 className="font-bold text-slate-700 text-sm">Tidak Ada Jemaat</h3>
-          <p className="text-xs text-slate-400 max-w-md mx-auto">Silakan bersihkan filter pencarian atau rekam jemaat baru menggunakan tombol tambah di atas.</p>
-        </div>
+        {canExport && <div className="mt-3 flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50 p-3 md:flex-row">
+          <input value={exportReason} onChange={(event) => setExportReason(event.target.value)} placeholder="Alasan export (minimal 10 karakter)" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-xs" />
+          <button onClick={handleExport} disabled={exporting} className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white disabled:bg-slate-400">{exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Export CSV Ter-mask</button>
+        </div>}
+      </section>
+
+      {notice && <div className="flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800"><span>{notice}</span><button onClick={() => setNotice("")}><X className="h-4 w-4" /></button></div>}
+      {error && <div className="flex items-start justify-between rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800"><span>{error}</span><button onClick={() => setError("")}><X className="h-4 w-4" /></button></div>}
+
+      {loading ? (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-64 animate-pulse rounded-3xl border border-slate-100 bg-white p-5"><div className="h-4 w-24 rounded bg-slate-100" /><div className="mt-5 h-6 w-2/3 rounded bg-slate-100" /><div className="mt-5 h-20 rounded bg-slate-50" /></div>)}</div>
+      ) : result.items.length === 0 ? (
+        <div className="rounded-3xl border border-slate-200 bg-white p-12 text-center"><Users className="mx-auto h-10 w-10 text-slate-300" /><h3 className="mt-3 font-bold text-slate-800">Tidak ada member dalam scope ini</h3><p className="mt-1 text-sm text-slate-500">Ubah pencarian/filter atau buat member baru.</p></div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredMembers.map((member) => (
-            <div 
-              key={member.id}
-              className="bg-white rounded-3xl border border-slate-100 material-shadow-1 hover:material-shadow-2 hover:border-indigo-100 transition-all p-5 space-y-4 flex flex-col justify-between"
-            >
-              <div className="space-y-3">
-                {/* Status chip & Stage badge */}
-                <div className="flex items-center justify-between">
-                  <span className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full border ${getStageStyles(member.discipleshipStage)}`}>
-                    {member.discipleshipStage}
-                  </span>
-
-                  <span className={`text-[9px] font-bold font-mono uppercase px-2 py-0.5 rounded ${
-                    member.status === "active" 
-                      ? "bg-emerald-500/10 text-emerald-500" 
-                      : "bg-slate-400/10 text-slate-400"
-                  }`}>
-                    {member.status === "active" ? "Aktif" : "Inaktif"}
-                  </span>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {result.items.map((member) => (
+            <article key={member.id} className="flex flex-col justify-between rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div>
+                <div className="flex items-center justify-between gap-3"><span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusClass(member.status)}`}>{statusLabel[member.status]}</span><span className="text-[10px] font-semibold text-slate-400">v{member.version || 1}</span></div>
+                <h3 className="mt-4 text-lg font-bold text-slate-950">{member.name}</h3>
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500"><MapPin className="h-3.5 w-3.5 text-indigo-500" />{member.cityName}</p>
+                <div className="mt-4 space-y-2 rounded-2xl bg-slate-50 p-3 text-xs text-slate-600">
+                  <p className="flex items-center gap-2"><Phone className="h-3.5 w-3.5" />{member.phone || "—"}</p>
+                  <p className="flex items-center gap-2"><Mail className="h-3.5 w-3.5" />{member.email || "—"}</p>
+                  <p className="flex items-center gap-2"><User className="h-3.5 w-3.5" />{member.mentorName || "Belum ada mentor"}</p>
+                  <p className="flex items-center gap-2"><Calendar className="h-3.5 w-3.5" />{member.joinedDate || member.joinedOn?.slice(0, 10)}</p>
                 </div>
-
-                {/* Name */}
-                <div className="space-y-1">
-                  <h3 className="font-display font-bold text-base text-slate-900 line-clamp-1">{member.name}</h3>
-                  <div className="flex items-center text-xs text-slate-400 space-x-1.5">
-                    <MapPin className="h-3.5 w-3.5 text-indigo-500" />
-                    <span>{member.cityName}</span>
-                  </div>
-                </div>
-
-                {/* Details layout */}
-                <div className="grid grid-cols-1 gap-2 pt-1">
-                  {/* Phone */}
-                  <div className="flex items-center text-xs text-slate-600 space-x-2">
-                    <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                    <span className="font-mono">{member.phone || "Tidak ada nomor"}</span>
-                  </div>
-                  
-                  {/* Mentor */}
-                  <div className="flex items-center text-xs text-slate-600 space-x-2">
-                    <User className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                    <span>Mentor: <strong className="text-slate-700">{member.mentorName || "Belum ditentukan"}</strong></span>
-                  </div>
-
-                  {/* Joined Date */}
-                  <div className="flex items-center text-xs text-slate-500 space-x-2">
-                    <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                    <span>Bergabung: {new Date(member.joinedDate).toLocaleDateString("id-ID", { year: "numeric", month: "short", day: "numeric" })}</span>
-                  </div>
-                </div>
+                <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-bold"><span className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-700">{member.discipleshipStage}</span><span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">Consent: {member.consentStatus || "unknown"}</span>{member.groupName && <span className="rounded-full bg-cyan-50 px-2 py-1 text-cyan-700">{member.groupName}</span>}</div>
               </div>
-
-              {/* Action buttons panel */}
-              <div className="mt-4 pt-3 border-t border-slate-50 flex items-center justify-end space-x-2">
-                <button
-                  onClick={() => handleOpenEditModal(member)}
-                  className="p-2 hover:bg-indigo-50 text-indigo-600 hover:text-indigo-500 rounded-xl transition-all"
-                  title="Ubah Data"
-                >
-                  <Edit className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => setDeleteTarget(member)}
-                  className="p-2 hover:bg-rose-50 text-rose-500 hover:text-rose-400 rounded-xl transition-all"
-                  title="Hapus Data"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+              <div className="mt-5 flex items-center justify-end gap-2 border-t border-slate-100 pt-3">
+                {canReadHistory && <button onClick={() => openHistory(member)} title="Profil dan histori" className="rounded-xl p-2 text-slate-600 hover:bg-slate-100"><History className="h-4 w-4" /></button>}
+                {canWrite && member.status !== "archived" && <button onClick={() => openEdit(member)} title="Ubah" className="rounded-xl p-2 text-indigo-600 hover:bg-indigo-50"><Edit className="h-4 w-4" /></button>}
+                {canArchive && member.status !== "archived" && <button onClick={() => { setArchiveTarget(member); setArchiveReason(""); }} title="Archive" className="rounded-xl p-2 text-amber-700 hover:bg-amber-50"><Archive className="h-4 w-4" /></button>}
               </div>
-            </div>
+            </article>
           ))}
         </div>
       )}
 
-      {/* Add / Edit Member Dialog (Material Design Center Dialog Box) */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden border border-slate-100 material-shadow-3 animate-in fade-in zoom-in-95 duration-150">
-            {/* Dialog Header */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-900 to-indigo-950 text-white">
-              <h3 className="font-display font-bold text-base">
-                {editingMember ? "Ubah Data Jemaat" : "Registrasi Jemaat Baru"}
-              </h3>
-              <button 
-                onClick={() => setIsModalOpen(false)}
-                className="p-1 hover:bg-white/10 rounded-full transition-all text-white"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+      <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"><span className="text-slate-500">{result.total} member · halaman {result.page} dari {Math.max(result.totalPages, 1)}</span><div className="flex gap-2"><button disabled={page <= 1 || loading} onClick={() => setPage((value) => value - 1)} className="rounded-xl border border-slate-200 p-2 disabled:opacity-30"><ChevronLeft className="h-4 w-4" /></button><button disabled={page >= result.totalPages || loading} onClick={() => setPage((value) => value + 1)} className="rounded-xl border border-slate-200 p-2 disabled:opacity-30"><ChevronRight className="h-4 w-4" /></button></div></div>
 
-            {/* Dialog Form */}
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <datalist id="member-mentor-suggestions">
-                {mentorNameSuggestions.map((name) => (
-                  <option key={name} value={name} />
-                ))}
-              </datalist>
-              <div className="grid grid-cols-1 gap-4">
-                {/* Name */}
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-600">Nama Lengkap</label>
-                  <input
-                    type="text"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    placeholder="Contoh: Maria Alexandra"
-                    className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
-                      errors.name ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
-                    }`}
-                  />
-                  {errors.name && (
-                    <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.name}</span>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  {/* City Select */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">Kota Pelayanan</label>
-                    <select
-                      value={formCityId}
-                      onChange={(e) => setFormCityId(e.target.value)}
-                      className={`w-full px-3 py-2 border rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-700 ${
-                        errors.cityId ? "border-red-400 focus:ring-red-500" : "border-slate-200"
-                      }`}
-                    >
-                      {cities.length === 0 ? (
-                        <option value="">-- Tidak ada kota --</option>
-                      ) : (
-                        <>
-                          <option value="">-- Pilih Kota --</option>
-                          {cities.map((city) => (
-                            <option key={city.id} value={city.id}>{city.name}</option>
-                          ))}
-                        </>
-                      )}
-                    </select>
-                    {cities.length === 0 ? (
-                      <span className="text-amber-500 text-[9px] mt-1 block leading-tight font-semibold">
-                        Pos kota kosong! Tambah kota di Dashboard dahulu.
-                      </span>
-                    ) : errors.cityId && (
-                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.cityId}</span>
-                    )}
-                  </div>
-
-                   {/* Phone */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">No. Telepon / WhatsApp</label>
-                    <input
-                      type="tel"
-                      value={formPhone}
-                      onChange={(e) => setFormPhone(formatPhone(e.target.value))}
-                      placeholder="Contoh: +62 822-5139-6690"
-                      className={`w-full px-3 py-2 border rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
-                        errors.phone ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
-                      }`}
-                    />
-                    {errors.phone && (
-                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.phone}</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Discipleship Stage */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">Tahap Pemuridan</label>
-                    <select
-                      value={formStage}
-                      onChange={(e) => setFormStage(e.target.value as Member["discipleshipStage"])}
-                      className={`w-full px-3 py-2 border rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-700 ${
-                        errors.stage ? "border-red-400 focus:ring-red-500" : "border-slate-200"
-                      }`}
-                    >
-                      <option value="">-- Pilih Tahap --</option>
-                      {stages.map((stg) => (
-                        <option key={stg} value={stg}>{stg}</option>
-                      ))}
-                    </select>
-                    {errors.stage && (
-                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.stage}</span>
-                    )}
-                  </div>
-
-                  {/* Mentor Name */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">Nama Mentor Pembimbing</label>
-                    <input
-                      type="text"
-                      list="member-mentor-suggestions"
-                      value={formMentor}
-                      onChange={(e) => setFormMentor(e.target.value)}
-                      placeholder="Contoh: Ev. Yosua"
-                      className={`w-full px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
-                        errors.mentor ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
-                      }`}
-                    />
-                    {errors.mentor && (
-                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.mentor}</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Joined Date */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">Tanggal Mulai Binaan</label>
-                    <input
-                      type="date"
-                      placeholder="Pilih tanggal mulai binaan"
-                      value={formDate}
-                      onChange={(e) => setFormDate(e.target.value)}
-                      className={`w-full px-3 py-2 border rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 ${
-                        errors.date ? "border-red-400 focus:ring-red-500 bg-red-50/10" : "border-slate-200"
-                      }`}
-                    />
-                    {errors.date && (
-                      <span className="text-red-500 text-[10px] mt-1 block font-semibold">{errors.date}</span>
-                    )}
-                  </div>
-
-                  {/* Status */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">Status Keanggotaan</label>
-                    <div className="flex items-center space-x-4 h-9">
-                      <label className="flex items-center space-x-2 text-xs font-medium text-slate-700 cursor-pointer select-none">
-                        <input
-                          type="radio"
-                          name="status"
-                          checked={formStatus === "active"}
-                          onChange={() => setFormStatus("active")}
-                          className="text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span>Aktif</span>
-                      </label>
-                      <label className="flex items-center space-x-2 text-xs font-medium text-slate-700 cursor-pointer select-none">
-                        <input
-                          type="radio"
-                          name="status"
-                          checked={formStatus === "inactive"}
-                          onChange={() => setFormStatus("inactive")}
-                          className="text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span>Inaktif</span>
-                      </label>
-                    </div>
-                  </div>
-                </div>
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/50 p-4 backdrop-blur-sm">
+          <div className="mx-auto my-6 w-full max-w-3xl rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4"><div><h3 className="font-bold text-slate-950">{editing ? "Ubah Member 360" : "Tambah Member 360"}</h3><p className="text-xs text-slate-500">Field bertanda wajib divalidasi kembali oleh backend.</p></div><button onClick={() => setModalOpen(false)}><X className="h-5 w-5" /></button></div>
+            <form onSubmit={handleSubmit} className="space-y-5 p-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Nama lengkap *" error={formErrors.name}><input value={form.name} onChange={(e) => updateForm("name", e.target.value)} className="field-input" /></Field>
+                <Field label="Primary service point *" error={formErrors.cityId}><select value={form.cityId} onChange={(e) => updateForm("cityId", e.target.value)} className="field-input"><option value="">Pilih kota</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}</select></Field>
+                <Field label="Nomor telepon *" error={formErrors.phone}><input value={form.phone} onChange={(e) => updateForm("phone", e.target.value)} placeholder="+628123456789" className="field-input" /></Field>
+                <Field label="Email" error={formErrors.email}><input type="email" value={form.email} onChange={(e) => updateForm("email", e.target.value)} className="field-input" /></Field>
+                <Field label="Tahap pemuridan *" error={formErrors.discipleshipStage}><select value={form.discipleshipStage} onChange={(e) => updateForm("discipleshipStage", e.target.value as Member["discipleshipStage"])} className="field-input"><option value="">Pilih tahap</option><option>Pekerja</option><option>Jemaat</option></select></Field>
+                <Field label="Lifecycle status *" error={formErrors.status}><select value={form.status} onChange={(e) => updateForm("status", e.target.value as EditableStatus)} className="field-input">{lifecycleStatuses.map((item) => <option key={item} value={item}>{statusLabel[item]}</option>)}</select></Field>
+                <Field label="Nama mentor" error={formErrors.mentorName}><input value={form.mentorName} onChange={(e) => updateForm("mentorName", e.target.value)} className="field-input" /></Field>
+                <Field label="Nama group/komsel" error={formErrors.groupName}><input value={form.groupName} onChange={(e) => updateForm("groupName", e.target.value)} className="field-input" /></Field>
+                <Field label="Tanggal mulai binaan *" error={formErrors.joinedDate}><input type="date" value={form.joinedDate} onChange={(e) => updateForm("joinedDate", e.target.value)} className="field-input" /></Field>
+                <Field label="Status consent" error={formErrors.consentStatus}><select value={form.consentStatus} onChange={(e) => updateForm("consentStatus", e.target.value as MemberForm["consentStatus"])} className="field-input"><option value="unknown">Belum diketahui</option><option value="granted">Diberikan</option><option value="revoked">Dicabut</option></select></Field>
+                <Field label="Sumber consent" error={formErrors.consentSource}><input value={form.consentSource} onChange={(e) => updateForm("consentSource", e.target.value)} placeholder="Form registrasi / verbal" className="field-input" /></Field>
+                <Field label="Tujuan pemrosesan" error={formErrors.consentPurpose}><input value={form.consentPurpose} onChange={(e) => updateForm("consentPurpose", e.target.value)} placeholder="Komunikasi pembinaan" className="field-input" /></Field>
               </div>
+              <Field label="Preferensi komunikasi" error={formErrors.communicationPreferences}><div className="flex flex-wrap gap-2">{preferenceOptions.map((option) => <button type="button" key={option.value} onClick={() => togglePreference(option.value)} className={`rounded-full border px-3 py-1.5 text-xs font-bold ${form.communicationPreferences.includes(option.value) ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-500"}`}>{option.label}</button>)}</div></Field>
 
-              {/* Form Actions */}
-              <div className="border-t border-slate-100 pt-4 flex items-center justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-all"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-xl transition-all shadow-md shadow-indigo-600/10"
-                >
-                  Simpan Perubahan
-                </button>
-              </div>
+              {duplicates.length > 0 && <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4"><div className="flex gap-2 text-sm font-bold text-amber-900"><AlertTriangle className="h-4 w-4" />Kandidat duplicate ditemukan sebelum penyimpanan</div><div className="mt-3 space-y-2">{duplicates.map((candidate) => <div key={candidate.id} className="rounded-xl border border-amber-200 bg-white p-3 text-xs"><p className="font-bold text-slate-900">{candidate.name} · {candidate.cityName}</p><p className="mt-1 text-slate-500">{candidate.maskedPhone} · {candidate.maskedEmail || "tanpa email"} · skor {candidate.score}% · {candidate.matchReasons.join(", ")}</p></div>)}</div><Field label="Alasan tetap membuat/mengubah data *" error={formErrors.duplicateOverrideReason}><textarea value={form.duplicateOverrideReason} onChange={(e) => updateForm("duplicateOverrideReason", e.target.value)} rows={2} className="field-input mt-2" /></Field></div>}
+
+              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" onClick={() => setModalOpen(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600">Batal</button><button disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-bold text-white disabled:bg-slate-400">{saving && <Loader2 className="h-4 w-4 animate-spin" />}Simpan</button></div>
             </form>
           </div>
         </div>
       )}
-      <ConfirmDialog
-        open={!!deleteTarget}
-        title="Hapus Data Jemaat?"
-        description="Data profil, status pembinaan, dan relasi mentor untuk jemaat ini akan dihapus dari tampilan lokal."
-        subject={deleteTarget?.name}
-        confirmLabel="Hapus Jemaat"
-        onCancel={() => setDeleteTarget(null)}
-        onConfirm={handleConfirmDelete}
-      />
-      {showSuccessAlert && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col items-center max-w-xs w-full text-center material-shadow-3 animate-scale-up">
-            <div className="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
-              <Users className="h-6 w-6" />
-            </div>
-            <h3 className="font-display font-bold text-sm text-slate-900">Jemaat Berhasil Disimpan</h3>
-            <p className="text-xs text-slate-400 mt-1">Data jemaat telah diperbarui di database.</p>
-          </div>
-        </div>
-      )}
+
+      {detail && <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/50 p-4 backdrop-blur-sm"><div className="mx-auto my-8 max-w-2xl rounded-3xl bg-white p-6"><div className="flex items-start justify-between"><div><p className="text-xs font-bold uppercase tracking-wide text-indigo-600">Member 360</p><h3 className="mt-1 text-xl font-bold text-slate-950">{detail.name}</h3><p className="text-sm text-slate-500">{detail.cityName} · {statusLabel[detail.status]}</p></div><button onClick={() => setDetail(null)}><X className="h-5 w-5" /></button></div>{historyLoading ? <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-indigo-600" /></div> : <div className="mt-6 grid gap-5 md:grid-cols-2"><HistoryList title="Histori pelayanan" items={history?.changes.map((item) => ({ id: item.id, title: `${item.fieldName}: ${item.oldValue || "—"} → ${item.newValue || "—"}`, detail: item.reason, date: item.createdAt })) || []} /><HistoryList title="Histori consent" items={history?.consents.map((item) => ({ id: item.id, title: `${item.consentStatus} · ${item.communicationPreferences.join(", ") || "tanpa preferensi"}`, detail: `${item.source} · ${item.purpose}`, date: item.recordedAt })) || []} /></div>}</div></div>}
+
+      {archiveTarget && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-3xl bg-white p-6"><div className="flex items-center gap-3"><div className="rounded-2xl bg-amber-50 p-3 text-amber-700"><Archive className="h-5 w-5" /></div><div><h3 className="font-bold text-slate-950">Archive {archiveTarget.name}?</h3><p className="text-xs text-slate-500">Data tidak dihapus dan histori tetap tersimpan.</p></div></div><textarea value={archiveReason} onChange={(e) => setArchiveReason(e.target.value)} placeholder="Alasan archive minimal 10 karakter" rows={3} className="field-input mt-5" /><div className="mt-4 flex justify-end gap-2"><button onClick={() => setArchiveTarget(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold">Batal</button><button onClick={handleArchive} disabled={saving} className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-bold text-white disabled:bg-slate-400">Archive</button></div></div></div>}
     </div>
   );
+}
+
+function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+  return <label className="block text-xs font-bold text-slate-600"><span>{label}</span><div className="mt-1">{children}</div>{error && <span className="mt-1 block text-[11px] font-semibold text-red-600">{error}</span>}</label>;
+}
+
+function HistoryList({ title, items }: { title: string; items: Array<{ id: string; title: string; detail: string; date: string }> }) {
+  return <section><h4 className="flex items-center gap-2 text-sm font-bold text-slate-900"><Clock3 className="h-4 w-4" />{title}</h4><div className="mt-3 space-y-2">{items.length === 0 ? <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">Belum ada histori.</p> : items.map((item) => <div key={item.id} className="rounded-xl border border-slate-100 p-3"><p className="text-xs font-bold text-slate-800">{item.title}</p>{item.detail && <p className="mt-1 text-[11px] text-slate-500">{item.detail}</p>}<p className="mt-1 text-[10px] text-slate-400">{new Date(item.date).toLocaleString("id-ID")}</p></div>)}</div></section>;
 }
