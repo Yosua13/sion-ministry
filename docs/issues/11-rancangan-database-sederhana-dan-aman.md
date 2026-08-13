@@ -1,6 +1,6 @@
 # Rancangan Database Sion yang Sederhana dan Aman
 
-Dokumen ini adalah rancangan target untuk domain identitas, anggota, akses, undangan akun, kehadiran, dan audit. Ini **bukan** migrasi yang langsung dijalankan. Jalankan hanya setelah data legacy direkonsiliasi, backup dan restore diuji, serta rancangan ini disetujui.
+Dokumen ini adalah rancangan target untuk domain identitas, anggota, akses, undangan akun, kehadiran, dan audit. Implementasinya tersedia pada migration `000007_simplify_identity_city_scope`; jalankan hanya setelah data legacy direkonsiliasi, backup dan restore diuji. UAT ada di [Panduan Manual Testing Identitas dan Undangan](../manual_testing/04-testing-identitas-undangan-scope-kota.md).
 
 ## Keputusan rancangan
 
@@ -18,7 +18,7 @@ erDiagram
     users ||--o{ consent_records : "memberi persetujuan"
     users ||--o{ audit_logs : "bertindak"
     cities ||--o{ events : "menyelenggarakan"
-    events ||--o{ event_attendances : "memiliki kehadiran"
+    berita_acaras ||--o{ event_attendances : "memiliki kehadiran"
     users ||--o{ event_attendances : "menghadiri"
     users ||--o{ event_attendances : "mencatat"
 ```
@@ -137,7 +137,7 @@ user_agent TEXT NULL
 
 `revoked_at = NULL` berarti sesi masih aktif. Jika sesi dicabut, isi timestamp, actor, dan alasan; jangan menghapusnya saat itu juga. Sesi yang sudah kedaluwarsa/dicabut baru dipurge menurut kebijakan retensi. Ini menjaga jejak audit dan membuat daftar sesi aktif cukup memakai `WHERE revoked_at IS NULL AND expires_at > now()`.
 
-### 6. `events` dan `event_attendances`
+### 6. `berita_acaras` (kegiatan) dan `event_attendances`
 
 `events` menggantikan nama teknis `berita_acaras` bila tim menyetujui rename. Setiap event mempunyai satu `city_id`. Kehadiran cukup berisi `event_id`, `user_id`, `checked_in_by_user_id`, dan `checked_in_at`, dengan `UNIQUE (event_id, user_id)`. Kota diturunkan dari event sehingga tidak ada `city_id` ganda yang dapat tidak konsisten.
 
@@ -151,7 +151,7 @@ user_agent TEXT NULL
 
 1. Admin/pekerja yang memiliki scope kota mengisi nama, email, telepon E.164, kota, data pemuridan, dan role awal.
 2. Backend memvalidasi input, memastikan actor memiliki scope kota, memeriksa email unik dan kandidat duplikat nama/telepon. Bila ada konflik, API memberi respons aman tanpa membocorkan data sensitif.
-3. Dalam satu transaksi, backend membuat `users(account_status='invited', password_hash=NULL)`, membuat `user_roles`, membuat `account_invitations`, dan menulis `audit_logs`.
+3. Dalam satu transaksi, backend membuat `users(account_status='invited', password_hash=NULL)`, `user_roles`, `account_invitations`, `consent_records` awal bila ada, dan `audit_logs`.
 4. Layanan email mengirim kalimat pengantar dan tombol **Aktifkan Akun** ke URL frontend `https://app.sion.../activate?token=<token-acak>`.
 5. Halaman aktivasi mengirim token dan password baru melalui HTTPS. Backend mengunci/menandai undangan dalam transaksi, memeriksa hash, kedaluwarsa, serta status pemakaian, lalu mengisi Argon2id password hash, `activated_at`, `email_verified_at`, dan `account_status='active'`.
 6. Sistem menerbitkan session baru dan menulis audit. Token undangan tidak dapat dipakai ulang. Login sebelum aktivasi selalu ditolak dengan pesan generik.
