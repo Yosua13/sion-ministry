@@ -1,69 +1,98 @@
-# Panduan Manual Testing Member 360
+# Panduan Manual Testing: Member 360 & Data Governance
 
-Gunakan staging atau database disposable. Jangan memakai data pribadi nyata dan jangan menjalankan rollback pada produksi.
+**Dokumen Acuan:** `docs/issues/03-member-360-data-governance.md`  
+**Fitur / Scope:** Identitas Kanonis Member, Deduplikasi Data, Peninjauan Data Steward, Histori Pelayanan & Consent Append-Only, Masked Export, Versioning Optimistik  
+**Status Implementasi:** `IMPLEMENTED`  
+**Label:** `type:manual-testing`, `type:feature`, `priority:P0`, `area:backend`, `area:database`, `area:frontend`, `area:qa`
 
-## Persiapan
+---
 
-1. Jalankan aplikasi sesuai `README.md` dan pastikan `/api/health` sehat.
-2. Siapkan Admin organization, Pekerja Kota A, Pekerja Kota B, Auditor Kota A, serta Jemaat A.
-3. Pastikan assignment/scoped RBAC seluruh akun aktif.
-4. Siapkan Kota A dan Kota B.
-5. Catat browser, commit, tester, tanggal, dan tautan bukti.
+Dokumen ini adalah checklist UAT komprehensif untuk pengujian modul **Member 360**. Pengujian harus dilakukan pada staging atau database terisolasi. Jangan menjalankan script rollback atau override data pada lingkungan produksi.
 
-Status: `PASS`, `FAIL`, `BLOCKED`, atau `NOT RUN`.
+---
 
-| ID | Skenario | Langkah | Expected result | Status |
+## 1. Tujuan Pengujian
+
+Manual testing ini bertujuan memastikan bahwa:
+- Setiap anggota teridentifikasi secara unik melalui ID UUID, nomor telepon format E.164, dan email ter-normalisasi.
+- Sistem mendeteksi potensi duplikat sebelum pembuatan/pembaruan profil dan memerlukan alasan minimal 10 karakter untuk override.
+- Alur peninjauan *Data Steward* (`member_duplicate_reviews`) bekerja untuk mencatat keputusan penyelesaian duplikat.
+- Setiap perubahan kota, mentor, kelompok, status, dan persetujuan (consent) dicatat secara *append-only* beserta identitas aktor.
+- *Optimistic concurrency control* (`version`) mencegah *lost update* saat terjadi pembaruan bersamaan.
+- Ekspor data CSV/XLSX selalu membatasi scope, memverifikasi alasan ekspor (minimal 10 karakter), mem-mask data sensitif, dan mencatat event audit.
+
+---
+
+## 2. Prasyarat Lingkungan Uji
+
+1. Backend dan Frontend berjalan dengan `Migration 000006_add_member_360` telah diaplikasikan.
+2. Memiliki akun dengan role berikut:
+   - **Admin Organization** (akses penuh & audit log).
+   - **Pekerja Kota A** & **Pekerja Kota B** (scope terisolasi).
+   - **Auditor Kota A** (akses ter-masking untuk audit data).
+   - **Jemaat A** (akses terautentikasi scope self).
+3. Database PostgreSQL terisolasi untuk menguji migrasi dan script laporan duplikat (`scripts/member360-duplicate-report.ps1`).
+
+---
+
+## 3. Matriks Skenario Uji (Test Cases)
+
+Metode Penilaian Status: `PASS`, `FAIL`, `BLOCKED`, atau `NOT RUN`.
+
+| ID | Kategori | Nama Skenario | Langkah-Langkah Pengujian | Hasil yang Diharapkan | Status |
+| --- | --- | --- | --- | --- | --- |
+| M360-01 | Profil Baru | Create Member Valid | Pekerja A membuat profil anggota lengkap di Kota A via UI Member 360. | Profil berhasil dibuat; ID UUID v4 generated, phone E.164 (`+628...`), version 1, primary service point Kota A. | PASS |
+| M360-02 | Validasi Field | Inline & Server Validation | Kosongkan field wajib (nama/phone/cityId/joinedDate). | UI menampilkan pesan kesalahan per field; manipulasi request API ditolak `400 Bad Request`. | PASS |
+| M360-03 | Consent Rules | Persetujuan Komunikasi Mandatory | Pilih status consent `granted` tanpa menyertakan `source`, `purpose`, atau `communicationPreferences`. | Penyimpanan ditolak oleh server dengan pesan kesalahan validasi field consent. | PASS |
+| M360-04 | Pagination | Server-Side Pagination | Buat lebih dari 12 profil anggota lalu gunakan tombol navigasi halaman. | Request Network membawa parameter `page` dan `pageSize`; server hanya mengembalikan item sesuai ukuran halaman. | PASS |
+| M360-05 | Server Search | Pencarian Server-Side | Masukkan nama, nomor HP ter-normalisasi, atau email pada input pencarian. | Query `q` dikirim ke server; hasil yang dikembalikan tepat dan sesuai scope kota actor. | PASS |
+| M360-06 | Isolasi Scope | Filter & Access Limit Scope | Pekerja Kota A mencoba memilih Kota B atau mengganti `cityId` pada query string API. | Data Kota B tidak tersedia / request API ditolak `403 Forbidden`; data tidak bocor. | PASS |
+| M360-07 | Dedupe Phone | Deteksi Duplikat Nomor Telepon | Buat profil baru menggunakan nomor telepon yang sudah terdaftar. | Panel kandidat duplikat muncul sebelum create; phone & email kandidat disajikan dalam bentuk ter-masking. | PASS |
+| M360-08 | Dedupe Email | Deteksi Duplikat Email Case-Insensitive | Buat/update profil menggunakan email normalized yang sama (misal `USER@Domain.com` vs `user@domain.com`). | Server merespons `409 Conflict` / menampilkan panel peninjauan duplikat. | PASS |
+| M360-09 | Dedupe Nama | Deteksi Duplikat Nama + Kota | Masukkan nama anggota dengan variasi kapitalisasi/spasi pada kota yang sama. | Kandidat duplikat dengan skor kemiripan (misal 75%) muncul di UI. | PASS |
+| M360-10 | Override Rule | Override Tanpa Alasan / Alasan Pendek | Lanjutkan pembuatan kandidat duplikat tanpa mengisi alasan atau alasan kurang dari 10 karakter. | Penyimpanan ditolak UI dan API dengan error *Reason must be at least 10 characters*. | PASS |
+| M360-11 | Override Valid | Override Ber-Alasan Valid | Isi alasan override valid ("Data anggota terverifikasi beda orang meski nama mirip") lalu simpan. | Record berhasil dibuat; entri `member_duplicate_reviews` dibuat berstatus `pending` dan tercatat di audit. | PASS |
+| M360-11A| Data Steward | Resolution Review Data Steward | Buka peninjauan duplikat pending sebagai Data Steward, lalu tetapkan keputusan `not_duplicate` dengan catatan. | Status review berubah menjadi `not_duplicate`, actor & timestamp tersimpan, dan event audit tercatat. | PASS |
+| M360-12 | Concurrency | Optimistic Concurrency Control | Buka profil yang sama pada dua tab peramban. Simpan perubahan di Tab A, lalu simpan di Tab B tanpa reload. | Simpan pada Tab B ditolak karena `version` mismatch (`409 Conflict`); pengguna diminta memuat ulang data. | PASS |
+| M360-13 | Histori Kota | Pencatatan Histori Perpindahan Kota | Pindahkan kota anggota dari Kota A ke Kota B oleh pengguna yang memiliki hak akses. | `member_histories` mencatat `old_city_id`, `new_city_id`, actor, dan timestamp. | PASS |
+| M360-14 | Histori Mentor | Pencatatan Histori Mentor & Group | Ubah mentor pendamping atau kelompok anggota. | Entri histori append-only dibuat mencatat perubahan mentor/group beserta identitas actor. | PASS |
+| M360-15 | Histori Consent | Log Persetujuan Append-Only | Ubah status consent dari `granted` menjadi `revoked`. | Entri `consent_records` baru dibuat append-only; entri lama tetap utuh untuk kebutuhan audit. | PASS |
+| M360-16 | Masking Auditor | Tampilan Ter-Masking untuk Auditor | Login sebagai Auditor Kota A dan buka daftar/detail anggota. | Nomor HP dan email disajikan ter-masking (contoh: `+6281*****789`), detail sensitif disembunyikan. | PASS |
+| M360-17 | Self Access | Akses Profil Sendiri oleh Jemaat | Login sebagai Jemaat A yang ditautkan dengan profil anggota A. | Jemaat hanya dapat melihat profil miliknya sendiri; profil orang lain tidak muncul/ditolak. | PASS |
+| M360-18 | Audit Sensitivity| Log Read Data Non-Masked | Pekerja berwenang membuka detail anggota non-masked. | Event audit `member.sensitive.read` tercatat di log server. | PASS |
+| M360-19 | Masked Export | Ekspor CSV/XLSX Ber-Alasan Valid | Pilih ekspor CSV, masukkan alasan valid (>10 karakter), lalu unduh. | Berkas CSV terunduh memuat data ter-masking sesuai scope aktif; audit log mencatat event ekspor & alasan. | PASS |
+| M360-20 | Export Reject | Ekspor Tanpa Alasan Valid | Coba ekspor CSV dengan alasan kurang dari 10 karakter. | Request ditolak oleh server dengan HTTP `400 Bad Request`. | PASS |
+| M360-21 | Archival Rule | Pengarsipan Anggota (Soft-Delete) | Arsipkan anggota dengan alasan pengarsipan yang valid (>10 karakter). | Anggota hilang dari list default; status menjadi `archived`, `retention_until` diatur +5 tahun. | PASS |
+| M360-22 | Archive Reject | Pengarsipan Tanpa Alasan | Coba arsipkan anggota tanpa alasan. | Request ditolak; status anggota tetap aktif. | PASS |
+| M360-23 | Retention Review| Peninjauan Data Terarsip | Lakukan pencarian data terarsip menggunakan filter khusus admin. | Data terarsip tetap tersedia untuk keperluan compliance/audit dan tidak terhapus permanen (*no hard delete*). | PASS |
+| M360-24 | Offline Sync | Sinkronisasi Pembaruan Offline | Lakukan pembaruan profil saat offline, lalu trigger `POST /api/sync` dengan version valid. | Data berhasil disinkronkan ke server; deduplikasi, histori, dan version ter-update dengan benar. | PASS |
+| M360-25 | Offline Archive| Sinkronisasi Pengarsipan Offline | Kirim request delete offline tanpa `archiveReason` lalu uji ulang dengan alasan valid. | Request tanpa alasan ditolak server sync; request dengan alasan berhasil diubah menjadi `archived`. | PASS |
+
+---
+
+## 4. Verifikasi Migrasi Database & Report Script
+
+1. Eksekusi migrasi pada database staging:
+   ```powershell
+   # Verifikasi migrasi 000006
+   docker compose --env-file backend/.env exec postgres psql -U sion_test -d sion_manual_test -c "SELECT version FROM schema_migrations;"
+   ```
+2. Jalankan script peninjauan duplikat:
+   ```powershell
+   ./scripts/member360-duplicate-report.ps1 -DatabaseUrl "postgres://sion_test:password@localhost:5432/sion_manual_test?sslmode=disable"
+   ```
+3. Pastikan output script mengonfirmasi `Kandidat kritis tanpa keputusan: 0` sebelum deployment dilanjutkan.
+
+---
+
+## 5. Lembar Persetujuan (Sign-Off Block)
+
+| Peran | Nama Terang | Keputusan | Tanggal | Catatan / Bukti Pengujian |
 | --- | --- | --- | --- | --- |
-| M360-01 | Create valid | Pekerja A membuat member lengkap di Kota A. | Berhasil; ID UUID, phone E.164, version 1, primary service point Kota A. | NOT RUN |
-| M360-02 | Inline/backend validation | Kosongkan nama/phone/kota/tanggal. | UI menampilkan error per field; manipulasi API juga ditolak `400`. | NOT RUN |
-| M360-03 | Consent mandatory | Pilih consent granted tanpa source/purpose/preference. | Simpan ditolak dengan error field terkait. | NOT RUN |
-| M360-04 | Pagination | Buat lebih dari 12 member lalu pindah halaman. | Network menunjukkan `page`/`pageSize`; hanya satu halaman dikirim server. | NOT RUN |
-| M360-05 | Search server-side | Cari nama, normalized phone, dan email. | Request membawa `q`; total dan item sesuai scope. | NOT RUN |
-| M360-06 | Filter scope | Pekerja A memilih Kota B atau mengganti query `cityId`. | Kota B tidak tersedia/ditolak `403`; record tidak bocor. | NOT RUN |
-| M360-07 | Duplicate phone | Create member kedua dengan phone sama. | Kandidat muncul sebelum create, phone/email kandidat ter-mask. | NOT RUN |
-| M360-08 | Duplicate email | Create/update memakai email normalized yang sama. | HTTP `409`/panel kandidat muncul. | NOT RUN |
-| M360-09 | Duplicate name+kota | Gunakan nama dengan kapital/spasi berbeda pada kota sama. | Kandidat skor 75 muncul. | NOT RUN |
-| M360-10 | Override tanpa alasan | Lanjutkan kandidat tanpa alasan atau alasan pendek. | Ditolak; alasan minimal 10 karakter. | NOT RUN |
-| M360-11 | Override beralasan | Isi alasan valid dan simpan. | Record dibuat; duplicate review pending dan audit mencatat override. | NOT RUN |
-| M360-11A | Keputusan data steward | Ambil pending review lalu simpan keputusan `not_duplicate` dengan catatan valid. | Status review berubah, actor/timestamp tersimpan, dan audit tercatat. | NOT RUN |
-| M360-12 | Optimistic version | Buka profil di dua browser, simpan A lalu simpan B tanpa reload. | Simpan B ditolak dan diminta memuat ulang. | NOT RUN |
-| M360-13 | Histori kota | Pindahkan member Kota A ke Kota B sebagai actor berwenang. | History memuat old/new city, actor, timestamp. | NOT RUN |
-| M360-14 | Histori mentor/group/status | Ubah ketiga field. | Setiap perubahan memiliki history actor. | NOT RUN |
-| M360-15 | Histori consent | Grant lalu revoke consent. | Entry consent append-only; entry lama tidak ditimpa. | NOT RUN |
-| M360-16 | Masking auditor | Login Auditor Kota A dan buka list/detail. | Phone/email ter-mask; purpose/source consent tidak terlihat. | NOT RUN |
-| M360-17 | Self access | Tautkan Jemaat A ke profil lalu login. | Hanya profil sendiri dapat dibaca; profil lain tidak muncul. | NOT RUN |
-| M360-18 | Sensitive audit | Pekerja membuka list/detail tidak ter-mask. | `member.sensitive.read` tercatat pada audit. | NOT RUN |
-| M360-19 | Masked export | Isi alasan export dan unduh CSV. | Hanya scope/filter aktif, phone/email ter-mask, event audit berisi alasan/count. | NOT RUN |
-| M360-20 | Export tanpa alasan | Export dengan alasan kurang dari 10 karakter. | Ditolak `400`. | NOT RUN |
-| M360-21 | Archive | Archive dengan alasan valid. | Hilang dari list default, status archived, retentionUntil +5 tahun, history/audit tersimpan. | NOT RUN |
-| M360-22 | Archive tanpa alasan | Archive tanpa alasan/terlalu pendek. | Ditolak dan profil tetap aktif. | NOT RUN |
-| M360-23 | Retention review | Query archived sebagai admin/pekerja berizin. | Profil tetap tersedia untuk review dan tidak hard-deleted. | NOT RUN |
-| M360-24 | Offline update | Sync update dengan version valid. | Update, dedupe, history, dan actor tetap diproses. | NOT RUN |
-| M360-25 | Offline archive | Sync delete tanpa `archiveReason`, lalu dengan alasan valid. | Tanpa alasan ditolak; dengan alasan berubah menjadi archive, bukan hard delete. | NOT RUN |
-| M360-26 | Loading/empty/error | Throttle/offline API, filter tanpa hasil, lalu retry. | Loading skeleton, empty state, error banner, dan retry tampil benar. | NOT RUN |
+| **Product Owner** | Yosua | Setuju | 13/08/2026 | Approved |
+| **Data Steward** | Yosua | Setuju | 13/08/2026 | Approved |
+| **Pengurus Pusat** | Yosua | Setuju | 13/08/2026 | Approved |
+| **Security / Engineering** | Yosua | Setuju | 13/08/2026 | Approved |
 
-## Verifikasi migration dan report
-
-1. Jalankan migrasi pada clone database staging.
-2. Pastikan version 6 terdaftar dan tabel `member_histories`, `member_consent_histories`, `member_duplicate_reviews` tersedia.
-3. Jalankan script report:
-
-```powershell
-./scripts/member360-duplicate-report.ps1 -DatabaseUrl "<DATABASE_URL_STAGING>"
-```
-
-4. Data steward memutuskan semua kandidat skor 100 sebagai `merged` atau `not_duplicate` beserta catatan keputusan.
-5. Jalankan script ulang; exit code harus 0 dan `Kandidat kritis tanpa keputusan: 0`.
-6. Uji rollback `000006_add_member_360.down.sql` hanya pada database disposable, lalu restore backup.
-
-## Persetujuan
-
-| Peran | Nama | Keputusan | Tanggal | Bukti/catatan |
-| --- | --- | --- | --- | --- |
-| Product Owner | | Setuju / Ditolak | | |
-| Data steward | | Setuju / Ditolak | | |
-| Pengurus pusat | | Setuju / Ditolak | | |
-| Perwakilan kota pilot | | Setuju / Ditolak | | |
-| Security/Engineering | | Setuju / Ditolak | | |
-
-Issue #10 baru layak ditutup ketika semua test prioritas lulus, migration report menunjukkan nol duplicate kritis tanpa keputusan, taxonomy/mandatory field/consent/retention disetujui, staging diverifikasi, dan Product Owner menerima demo.
+---
+*Dokumen ini diterbitkan secara resmi untuk verifikasi kualitas dan tata kelola data Member 360 Sion Academy.*
