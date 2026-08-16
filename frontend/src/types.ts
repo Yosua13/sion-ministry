@@ -135,6 +135,7 @@ export interface Member {
   createdAt?: string;
   updatedAt?: string;
   duplicateOverrideReason?: string;
+  inviteRole?: string;
 }
 
 export interface MemberDuplicateCandidate {
