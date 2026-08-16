@@ -25,6 +25,7 @@ type AuthRepository interface {
 	GetUsers() ([]models.User, error)
 	UpdateUser(user *models.User) error
 	CreateSession(session *models.AuthSession) error
+	CreateSessionWithAudit(session *models.AuthSession, audit *models.AuditLog) error
 	GetSession(tokenHash string) (*models.AuthSession, error)
 	UpdateSession(session *models.AuthSession) error
 	RevokeSession(tokenHash, actorID, reason string, at time.Time) error
@@ -99,6 +100,15 @@ func (r *authRepository) UpdateUser(user *models.User) error { return r.db.Save(
 
 func (r *authRepository) CreateSession(session *models.AuthSession) error {
 	return r.db.Create(session).Error
+}
+
+func (r *authRepository) CreateSessionWithAudit(session *models.AuthSession, audit *models.AuditLog) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(session).Error; err != nil {
+			return err
+		}
+		return tx.Create(audit).Error
+	})
 }
 
 func (r *authRepository) GetSession(tokenHash string) (*models.AuthSession, error) {

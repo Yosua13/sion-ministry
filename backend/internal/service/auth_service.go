@@ -72,7 +72,9 @@ func (s *authService) Login(email, password string, device ...string) (*models.A
 	if len(device) > 2 {
 		session.IPAddress = strings.TrimSpace(device[2])
 	}
-	if err := s.repo.CreateSession(session); err != nil {
+	audit := newAuthAudit(user.ID, "session.created", "auth_session", session.ID, "self", user.ID, "success", map[string]any{"deviceName": session.DeviceName})
+	audit.IPAddress = session.IPAddress
+	if err := s.repo.CreateSessionWithAudit(session, audit); err != nil {
 		return nil, "", err
 	}
 	return &models.AuthResponse{User: *user, ExpiresAt: session.ExpiresAt}, token, nil

@@ -9,6 +9,15 @@ import (
 
 const csrfCookieName = "sion_csrf"
 
+func isReadOnlyMethod(method string) bool {
+	switch method {
+	case fiber.MethodGet, fiber.MethodHead, fiber.MethodOptions:
+		return true
+	default:
+		return false
+	}
+}
+
 func CSRFProtection(allowedOrigins []string) fiber.Handler {
 	allowed := map[string]bool{}
 	for _, origin := range allowedOrigins {
@@ -77,13 +86,14 @@ func (h *Handlers) RequirePermission(permission string) fiber.Handler {
 		}
 		access, err := h.services.Access.Resolve(user)
 		if err != nil || !h.services.Access.HasPermission(access, permission) {
-			h.services.Access.RecordAudit(user.ID, "access.denied", "api", c.Path(), "", "", "denied", requestID(c), c.IP(), map[string]any{"permission": permission, "method": c.Method()})
+			// Akses baca tidak dicatat agar audit log hanya berisi aksi yang
+			// mengubah data atau kejadian keamanan pada aksi tulis.
+			if !isReadOnlyMethod(c.Method()) {
+				h.services.Access.RecordAudit(user.ID, "access.denied", "api", c.Path(), "", "", "denied", requestID(c), c.IP(), map[string]any{"permission": permission, "method": c.Method()})
+			}
 			return WriteAPIError(c, fiber.StatusForbidden, "forbidden", "Role atau scope akun tidak memiliki izin untuk aksi ini.")
 		}
 		c.Locals("access", access)
-		if permission == "journal.sensitive.read" || permission == "audit.read" || permission == "donation.verify" {
-			h.services.Access.RecordAudit(user.ID, "access.allowed", "api", c.Path(), "", "", "success", requestID(c), c.IP(), map[string]any{"permission": permission, "method": c.Method()})
-		}
 		return c.Next()
 	}
 }

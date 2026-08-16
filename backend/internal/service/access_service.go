@@ -315,7 +315,13 @@ func (s *accessService) GetAuditLogs(access *models.AccessContext, userID string
 		return nil, errors.New("scope akses tidak tersedia")
 	}
 	var logs []models.AuditLog
-	db := s.db.Order("created_at desc").Limit(500)
+	// Keep the menu focused on changes even while a deployment is in progress
+	// and before its cleanup migration has run on every environment.
+	db := s.db.
+		Where("action NOT LIKE ? AND action <> ?", "%.read", "access.allowed").
+		Where("NOT (action = ? AND COALESCE(metadata ->> 'method', '') IN ?)", "access.denied", []string{"GET", "HEAD", "OPTIONS"}).
+		Order("created_at desc").
+		Limit(500)
 	if !access.AllCities {
 		db = db.Where("actor_user_id = ? OR (scope_type = 'city' AND scope_id IN ?)", userID, access.CityIDs)
 	}
@@ -386,7 +392,18 @@ func (s *accessService) CheckIn(access *models.AccessContext, user *models.User,
 	return record, nil
 }
 
+// shouldStoreAuditAction excludes request-read telemetry. Audit logs are kept
+// for data changes, sensitive business actions, and write-access denials so
+// the audit table remains useful without growing for every page load.
+func shouldStoreAuditAction(action string) bool {
+	action = strings.ToLower(strings.TrimSpace(action))
+	return action != "" && !strings.HasSuffix(action, ".read") && action != "access.allowed"
+}
+
 func (s *accessService) RecordAudit(actorID, action, resourceType, resourceID, scopeType, scopeID, outcome, requestID, ip string, metadata map[string]any) {
+	if !shouldStoreAuditAction(action) {
+		return
+	}
 	if metadata == nil {
 		metadata = map[string]any{}
 	}

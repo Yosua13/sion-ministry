@@ -80,6 +80,26 @@ func localStringPointer(value string) *string {
 	return &value
 }
 
+// recordMutationAudit stores a successful state change without retaining the
+// request body, which may contain personal or sensitive information.
+func (h *Handlers) recordMutationAudit(c *fiber.Ctx, action, resourceType, resourceID, scopeType, scopeID string, metadata map[string]any) {
+	if h == nil || h.services == nil || h.services.Access == nil {
+		return
+	}
+	actor, _ := c.Locals("user").(*models.User)
+	if actor == nil {
+		return
+	}
+	h.services.Access.RecordAudit(actor.ID, action, resourceType, resourceID, scopeType, scopeID, "success", requestID(c), c.IP(), metadata)
+}
+
+func cityAuditScope(cityID *string) (string, string) {
+	if cityID == nil || strings.TrimSpace(*cityID) == "" {
+		return "", ""
+	}
+	return "city", strings.TrimSpace(*cityID)
+}
+
 func (h *Handlers) Login(c *fiber.Ctx) error {
 	var req struct {
 		Email    string `json:"email"`
@@ -376,6 +396,7 @@ func (h *Handlers) CreateCity(c *fiber.Ctx) error {
 	if err := h.services.City.Create(&city); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "city.created", "city", city.ID, "city", city.ID, nil)
 	return c.Status(fiber.StatusCreated).JSON(city)
 }
 
@@ -470,9 +491,6 @@ func (h *Handlers) GetMembers(c *fiber.Ctx) error {
 	}
 	canReadSensitive := h.services.Access.HasPermission(access, "member.sensitive.read")
 	maskMemberResult(result, user, canReadSensitive)
-	if canReadSensitive && len(result.Items) > 0 {
-		h.services.Access.RecordAudit(user.ID, "member.sensitive.read", "member_list", "", "", "", "success", requestID(c), c.IP(), map[string]any{"recordCount": len(result.Items), "page": result.Page})
-	}
 	return c.JSON(result)
 }
 
@@ -494,11 +512,6 @@ func (h *Handlers) GetMember(c *fiber.Ctx) error {
 		masked := service.MaskMemberSensitive(*member)
 		member = &masked
 	}
-	action := "member.self.read"
-	if canReadSensitive {
-		action = "member.sensitive.read"
-	}
-	h.services.Access.RecordAudit(user.ID, action, "member", member.ID, "city", member.CityID, "success", requestID(c), c.IP(), nil)
 	return c.JSON(member)
 }
 
@@ -603,7 +616,6 @@ func (h *Handlers) GetMemberHistory(c *fiber.Ctx) error {
 	if err != nil {
 		return WriteAPIError(c, fiber.StatusInternalServerError, "member_history_failed", "Gagal mengambil histori anggota.")
 	}
-	h.services.Access.RecordAudit(user.ID, "member.history.read", "member", member.ID, "city", member.CityID, "success", requestID(c), c.IP(), nil)
 	return c.JSON(history)
 }
 
@@ -684,6 +696,7 @@ func (h *Handlers) CreateBerita(c *fiber.Ctx) error {
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "event.created", "event", b.ID, "city", b.CityID, nil)
 	return c.Status(fiber.StatusCreated).JSON(b)
 }
 
@@ -700,6 +713,7 @@ func (h *Handlers) DeleteBerita(c *fiber.Ctx) error {
 	if err := h.services.Berita.Delete(id); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "event.deleted", "event", id, "city", existing.CityID, nil)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -765,6 +779,7 @@ func (h *Handlers) CreateJurnalPA(c *fiber.Ctx) error {
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "journal.created", "journal", j.ID, "city", j.CityID, nil)
 	return c.Status(fiber.StatusCreated).JSON(j)
 }
 
@@ -786,6 +801,7 @@ func (h *Handlers) DeleteJurnalPA(c *fiber.Ctx) error {
 	if err := h.services.Jurnal.Delete(id); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "journal.deleted", "journal", id, "city", existing.CityID, nil)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -806,6 +822,7 @@ func (h *Handlers) CreateCampaign(c *fiber.Ctx) error {
 	if err := h.services.Donation.CreateCampaign(&campaign); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "campaign.created", "campaign", campaign.ID, "", "", nil)
 	return c.Status(fiber.StatusCreated).JSON(campaign)
 }
 
@@ -838,6 +855,8 @@ func (h *Handlers) CreateDonationRecord(c *fiber.Ctx) error {
 	if err := h.services.Donation.CreateRecord(&record); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	scopeType, scopeID := cityAuditScope(record.CityID)
+	h.recordMutationAudit(c, "donation.created", "donation", record.ID, scopeType, scopeID, nil)
 	return c.Status(fiber.StatusCreated).JSON(record)
 }
 
@@ -855,7 +874,7 @@ func (h *Handlers) VerifyDonationRecord(c *fiber.Ctx) error {
 	if err != nil {
 		return WriteAPIError(c, fiber.StatusInternalServerError, "donation_verification_failed", "Gagal memverifikasi donasi.")
 	}
-	h.services.Access.RecordAudit(user.ID, "donation.verified", "donation", record.ID, "city", *record.CityID, "success", requestID(c), c.IP(), nil)
+	h.recordMutationAudit(c, "donation.verified", "donation", record.ID, "city", *record.CityID, nil)
 	return c.JSON(record)
 }
 
@@ -876,6 +895,7 @@ func (h *Handlers) CreateLink(c *fiber.Ctx) error {
 	if err := h.services.Link.Create(&link); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "link.created", "link", link.ID, "", "", nil)
 	return c.Status(fiber.StatusCreated).JSON(link)
 }
 
@@ -889,6 +909,7 @@ func (h *Handlers) UpdateLink(c *fiber.Ctx) error {
 	if err := h.services.Link.Update(&link); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "link.updated", "link", link.ID, "", "", nil)
 	return c.JSON(link)
 }
 
@@ -897,6 +918,7 @@ func (h *Handlers) DeleteLink(c *fiber.Ctx) error {
 	if err := h.services.Link.Delete(id); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "link.deleted", "link", id, "", "", nil)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -917,6 +939,7 @@ func (h *Handlers) CreateJob(c *fiber.Ctx) error {
 	if err := h.services.Job.CreateJob(&job); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "job.created", "job", job.ID, "", "", nil)
 	return c.Status(fiber.StatusCreated).JSON(job)
 }
 
@@ -949,6 +972,8 @@ func (h *Handlers) CreateJobApplication(c *fiber.Ctx) error {
 	if err := h.services.Job.CreateApplication(&app); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	scopeType, scopeID := cityAuditScope(app.CityID)
+	h.recordMutationAudit(c, "job_application.created", "job_application", app.ID, scopeType, scopeID, map[string]any{"jobId": app.JobID})
 	return c.Status(fiber.StatusCreated).JSON(app)
 }
 
@@ -971,6 +996,7 @@ func (h *Handlers) UpdateModule(c *fiber.Ctx) error {
 	if err := h.services.Module.Update(&module); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "module.updated", "module", module.ID, "", "", nil)
 	return c.JSON(module)
 }
 
@@ -1008,6 +1034,13 @@ func (h *Handlers) Sync(c *fiber.Ctx) error {
 	if err := h.services.Sync.Sync(&payload, user.ID, access.CityIDs, access.AllCities); err != nil {
 		log.Printf("Sync Error: %v", err)
 		return WriteAPIError(c, fiber.StatusBadRequest, "sync_validation_failed", err.Error())
+	}
+	for _, item := range payload.PendingChanges {
+		action := strings.ToLower(strings.TrimSpace(item.Action))
+		if action != "create" && action != "update" && action != "delete" {
+			continue
+		}
+		h.recordMutationAudit(c, "sync."+action, strings.TrimSpace(item.ItemType), strings.TrimSpace(item.ID), "", "", map[string]any{"source": "offline_sync"})
 	}
 
 	return c.JSON(fiber.Map{"success": true})
