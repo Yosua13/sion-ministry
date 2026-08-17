@@ -11,11 +11,14 @@ type CityService interface {
 }
 
 type MemberService interface {
-	GetAll() ([]models.Member, error)
+	List(query models.MemberListQuery) (*models.MemberListResult, error)
 	GetByID(id string) (*models.Member, error)
-	Create(member *models.Member) error
-	Update(member *models.Member) error
-	Delete(id string) error
+	FindDuplicateCandidates(member *models.Member, excludeID string, cityIDs []string, allCities bool) ([]models.MemberDuplicateCandidate, error)
+	Create(member *models.Member, actorID string, cityIDs []string, allCities bool) error
+	Update(member *models.Member, actorID string, cityIDs []string, allCities bool) error
+	Archive(member *models.Member, actorID, reason string) error
+	GetHistory(memberID string) (*models.MemberHistoryResult, error)
+	Export(query models.MemberListQuery) ([]models.Member, error)
 }
 
 type BeritaService interface {
@@ -65,18 +68,20 @@ type AIService interface {
 }
 
 type SyncService interface {
-	Sync(payload *models.SyncPayload) error
+	Sync(payload *models.SyncPayload, actorID string, cityIDs []string, allCities bool) error
 }
 
 type AuthService interface {
-	Register(name string, email string, password string, role string, cityID string, cityName string) (*models.User, error)
-	Login(email string, password string, device ...string) (*models.AuthResponse, error)
+	Login(email string, password string, device ...string) (*models.AuthResponse, string, error)
+	Activate(rawToken string, password string, device ...string) (*models.AuthResponse, string, error)
+	InviteMember(member *models.Member, actorID string) error
+	ResendInvitation(userID, actorID string) error
 	GetUserByToken(token string) (*models.User, error)
-	Logout(token string) error
-	LogoutAll(userID string) error
+	GetSession(token string) (*models.AuthSession, error)
+	Logout(token, actorID string) error
+	LogoutAll(userID, actorID string) error
 	EnsureBootstrapAdmin(email string, password string) error
 	GetUsers() ([]models.User, error)
-	ApproveUser(id string, actorID ...string) (*models.User, error)
 }
 
 type AccessService interface {
@@ -90,17 +95,16 @@ type AccessService interface {
 	CanAccessJournal(access *models.AccessContext, user *models.User, journal *models.JurnalPA, write bool) bool
 	CanAccessUpload(access *models.AccessContext, user *models.User, filename string) bool
 	ValidateSync(access *models.AccessContext, user *models.User, payload *models.SyncPayload) error
-	GetAssignments(access *models.AccessContext) ([]models.RoleAssignment, error)
-	CreateAssignment(input *models.RoleAssignment, actor *models.User) (*models.RoleAssignment, error)
-	ApproveAssignment(id string, actor *models.User) (*models.RoleAssignment, error)
-	RevokeAssignment(id string, actor *models.User) error
-	AssignMentor(memberID, mentorUserID, memberUserID string, actor *models.User) error
+	GetRoles(access *models.AccessContext) ([]models.UserRole, error)
+	GrantRole(input *models.UserRole, actor *models.User) (*models.UserRole, error)
+	RevokeRole(id string, actor *models.User) error
+	AssignMentor(memberID, mentorUserID string, actor *models.User) error
 	GetScopeCatalog(access *models.AccessContext) (*models.ScopeCatalog, error)
 	GetAuditLogs(access *models.AccessContext, userID string) ([]models.AuditLog, error)
 	GetSessions(access *models.AccessContext, actorID, targetUserID string) ([]models.AuthSession, error)
 	RevokeSession(access *models.AccessContext, actorID, sessionID string) error
 	GetAttendance(access *models.AccessContext) ([]models.AttendanceCheckIn, error)
-	CheckIn(access *models.AccessContext, user *models.User, eventID, memberID string) (*models.AttendanceCheckIn, error)
+	CheckIn(access *models.AccessContext, user *models.User, eventID, userID string) (*models.AttendanceCheckIn, error)
 	RecordAudit(actorID, action, resourceType, resourceID, scopeType, scopeID, outcome, requestID, ip string, metadata map[string]any)
 }
 
@@ -117,4 +121,5 @@ type Service struct {
 	AI       AIService
 	Sync     SyncService
 	Access   AccessService
+	Location LocationService
 }

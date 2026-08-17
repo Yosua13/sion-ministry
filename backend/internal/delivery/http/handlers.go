@@ -1,10 +1,17 @@
 package http
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/csv"
+	"encoding/hex"
 	"errors"
 	"log"
+	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"backend/internal/models"
 	"backend/internal/objectstore"
@@ -34,12 +41,35 @@ func (h *Handlers) HealthCheck(c *fiber.Ctx) error {
 	})
 }
 
-func getBearerToken(c *fiber.Ctx) string {
-	authHeader := c.Get("Authorization")
-	if authHeader == "" {
-		return ""
+const (
+	productionSessionCookieName  = "__Host-sion_session"
+	developmentSessionCookieName = "sion_session"
+)
+
+func secureCookiesEnabled() bool { return strings.EqualFold(os.Getenv("APP_ENV"), "production") }
+
+// __Host- cookies are accepted only when Secure is set. Use that stricter name in
+// HTTPS production and a regular HttpOnly cookie for local HTTP development.
+func sessionCookieName() string {
+	if secureCookiesEnabled() {
+		return productionSessionCookieName
 	}
-	return strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+	return developmentSessionCookieName
+}
+
+func getSessionToken(c *fiber.Ctx) string { return strings.TrimSpace(c.Cookies(sessionCookieName())) }
+
+func setSessionCookie(c *fiber.Ctx, token string, expiresAt time.Time) {
+	c.Cookie(&fiber.Cookie{Name: sessionCookieName(), Value: token, Path: "/", HTTPOnly: true, Secure: secureCookiesEnabled(), SameSite: "Strict", Expires: expiresAt})
+	csrf := make([]byte, 32)
+	if _, err := rand.Read(csrf); err == nil {
+		c.Cookie(&fiber.Cookie{Name: csrfCookieName, Value: hex.EncodeToString(csrf), Path: "/", HTTPOnly: false, Secure: secureCookiesEnabled(), SameSite: "Strict", Expires: expiresAt})
+	}
+}
+
+func clearSessionCookie(c *fiber.Ctx) {
+	c.Cookie(&fiber.Cookie{Name: sessionCookieName(), Value: "", Path: "/", HTTPOnly: true, Secure: secureCookiesEnabled(), SameSite: "Strict", Expires: time.Unix(1, 0)})
+	c.Cookie(&fiber.Cookie{Name: csrfCookieName, Value: "", Path: "/", HTTPOnly: false, Secure: secureCookiesEnabled(), SameSite: "Strict", Expires: time.Unix(1, 0)})
 }
 
 func localStringPointer(value string) *string {
@@ -50,23 +80,24 @@ func localStringPointer(value string) *string {
 	return &value
 }
 
-func (h *Handlers) Register(c *fiber.Ctx) error {
-	var req struct {
-		Name     string `json:"name"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
-		Role     string `json:"role"`
-		CityID   string `json:"cityId"`
-		CityName string `json:"cityName"`
+// recordMutationAudit stores a successful state change without retaining the
+// request body, which may contain personal or sensitive information.
+func (h *Handlers) recordMutationAudit(c *fiber.Ctx, action, resourceType, resourceID, scopeType, scopeID string, metadata map[string]any) {
+	if h == nil || h.services == nil || h.services.Access == nil {
+		return
 	}
-	if err := c.BodyParser(&req); err != nil {
-		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Payload pendaftaran tidak valid.")
+	actor, _ := c.Locals("user").(*models.User)
+	if actor == nil {
+		return
 	}
-	user, err := h.services.Auth.Register(req.Name, req.Email, req.Password, req.Role, req.CityID, req.CityName)
-	if err != nil {
-		return WriteAPIError(c, fiber.StatusBadRequest, "registration_failed", err.Error())
+	h.services.Access.RecordAudit(actor.ID, action, resourceType, resourceID, scopeType, scopeID, "success", requestID(c), c.IP(), metadata)
+}
+
+func cityAuditScope(cityID *string) (string, string) {
+	if cityID == nil || strings.TrimSpace(*cityID) == "" {
+		return "", ""
 	}
-	return c.Status(fiber.StatusCreated).JSON(user)
+	return "city", strings.TrimSpace(*cityID)
 }
 
 func (h *Handlers) Login(c *fiber.Ctx) error {
@@ -81,20 +112,72 @@ func (h *Handlers) Login(c *fiber.Ctx) error {
 	if deviceName == "" {
 		deviceName = "Browser"
 	}
-	session, err := h.services.Auth.Login(req.Email, req.Password, deviceName, c.Get("User-Agent"), c.IP())
+	session, token, err := h.services.Auth.Login(req.Email, req.Password, deviceName, c.Get("User-Agent"), c.IP())
 	if err != nil {
 		return WriteAPIError(c, fiber.StatusUnauthorized, "invalid_credentials", err.Error())
 	}
+	if access, resolveErr := h.services.Access.Resolve(&session.User); resolveErr == nil {
+		session.User.Role = primaryFrontendRole(access)
+	}
+	setSessionCookie(c, token, session.ExpiresAt)
+	return c.JSON(session)
+}
+
+func (h *Handlers) Activate(c *fiber.Ctx) error {
+	var req struct {
+		Token    string `json:"token"`
+		Password string `json:"password"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Payload aktivasi tidak valid.")
+	}
+	deviceName := strings.TrimSpace(c.Get("X-Device-Name"))
+	if deviceName == "" {
+		deviceName = "Browser"
+	}
+	session, token, err := h.services.Auth.Activate(req.Token, req.Password, deviceName, c.Get("User-Agent"), c.IP())
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "activation_failed", "Tautan aktivasi tidak valid, sudah digunakan, atau telah kedaluwarsa.")
+	}
+	if access, resolveErr := h.services.Access.Resolve(&session.User); resolveErr == nil {
+		session.User.Role = primaryFrontendRole(access)
+	}
+	setSessionCookie(c, token, session.ExpiresAt)
 	return c.JSON(session)
 }
 
 func (h *Handlers) Me(c *fiber.Ctx) error {
-	token := getBearerToken(c)
+	token := getSessionToken(c)
 	user, err := h.services.Auth.GetUserByToken(token)
 	if err != nil {
 		return WriteAPIError(c, fiber.StatusUnauthorized, "invalid_session", "Sesi tidak valid atau sudah berakhir.")
 	}
+	if access, resolveErr := h.services.Access.Resolve(user); resolveErr == nil {
+		user.Role = primaryFrontendRole(access)
+	}
 	return c.JSON(user)
+}
+
+func primaryFrontendRole(access *models.AccessContext) string {
+	if access == nil {
+		return "jemaat"
+	}
+	if containsRole(access.Roles, "admin") {
+		return "admin"
+	}
+	if containsRole(access.Roles, "pekerja") || containsRole(access.Roles, "mentor") {
+		return "pekerja"
+	}
+	return "jemaat"
+}
+
+func containsRole(roles []string, expected string) bool {
+	for _, role := range roles {
+		if role == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handlers) GetAccessContext(c *fiber.Ctx) error {
@@ -110,10 +193,12 @@ func (h *Handlers) GetAccessContext(c *fiber.Ctx) error {
 }
 
 func (h *Handlers) Logout(c *fiber.Ctx) error {
-	token := getBearerToken(c)
+	token := getSessionToken(c)
+	user, _ := c.Locals("user").(*models.User)
 	if token != "" {
-		_ = h.services.Auth.Logout(token)
+		_ = h.services.Auth.Logout(token, user.ID)
 	}
+	clearSessionCookie(c)
 	return c.JSON(fiber.Map{"success": true})
 }
 
@@ -122,7 +207,7 @@ func (h *Handlers) LogoutAll(c *fiber.Ctx) error {
 	if !ok || user == nil {
 		return WriteAPIError(c, fiber.StatusUnauthorized, "missing_session", "Sesi tidak ditemukan.")
 	}
-	if err := h.services.Auth.LogoutAll(user.ID); err != nil {
+	if err := h.services.Auth.LogoutAll(user.ID, user.ID); err != nil {
 		return WriteAPIError(c, fiber.StatusInternalServerError, "session_revocation_failed", "Gagal mencabut sesi.")
 	}
 	return c.JSON(fiber.Map{"success": true})
@@ -173,69 +258,52 @@ func (h *Handlers) GetUsers(c *fiber.Ctx) error {
 		return WriteAPIError(c, fiber.StatusInternalServerError, "users_lookup_failed", "Gagal mengambil daftar pengguna.")
 	}
 	access, _ := c.Locals("access").(*models.AccessContext)
-	hasOrganizationScope := false
-	for _, assignment := range access.Assignments {
-		if assignment.ScopeType == "organization" {
-			hasOrganizationScope = true
-			break
-		}
-	}
 	filtered := make([]models.User, 0, len(users))
 	for _, user := range users {
-		if user.ID == access.UserID || (user.CityID != nil && h.services.Access.CanAccessCity(access, *user.CityID)) || (user.CityID == nil && hasOrganizationScope) {
+		if user.ID == access.UserID || access.AllCities || (user.CityID != nil && h.services.Access.CanAccessCity(access, *user.CityID)) {
 			filtered = append(filtered, user)
 		}
 	}
 	return c.JSON(filtered)
 }
 
-func (h *Handlers) ApproveUser(c *fiber.Ctx) error {
+func (h *Handlers) ResendInvitation(c *fiber.Ctx) error {
 	actor, _ := c.Locals("user").(*models.User)
 	access, _ := c.Locals("access").(*models.AccessContext)
 	if !h.services.Access.CanManageUser(access, c.Params("id")) {
 		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Pengguna berada di luar scope akun.")
 	}
-	user, err := h.services.Auth.ApproveUser(c.Params("id"), actor.ID)
-	if err != nil {
-		return WriteAPIError(c, fiber.StatusInternalServerError, "user_approval_failed", "Gagal menyetujui pengguna.")
+	if err := h.services.Auth.ResendInvitation(c.Params("id"), actor.ID); err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invitation_resend_failed", err.Error())
 	}
-	return c.JSON(user)
+	return c.JSON(fiber.Map{"success": true})
 }
 
-func (h *Handlers) GetRoleAssignments(c *fiber.Ctx) error {
+func (h *Handlers) GetRoles(c *fiber.Ctx) error {
 	access, _ := c.Locals("access").(*models.AccessContext)
-	assignments, err := h.services.Access.GetAssignments(access)
+	assignments, err := h.services.Access.GetRoles(access)
 	if err != nil {
 		return WriteAPIError(c, fiber.StatusInternalServerError, "assignments_lookup_failed", "Gagal mengambil role assignment.")
 	}
 	return c.JSON(assignments)
 }
 
-func (h *Handlers) CreateRoleAssignment(c *fiber.Ctx) error {
+func (h *Handlers) GrantRole(c *fiber.Ctx) error {
 	actor, _ := c.Locals("user").(*models.User)
-	var assignment models.RoleAssignment
+	var assignment models.UserRole
 	if err := c.BodyParser(&assignment); err != nil {
 		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Payload assignment tidak valid.")
 	}
-	created, err := h.services.Access.CreateAssignment(&assignment, actor)
+	created, err := h.services.Access.GrantRole(&assignment, actor)
 	if err != nil {
 		return WriteAPIError(c, fiber.StatusBadRequest, "assignment_failed", err.Error())
 	}
 	return c.Status(fiber.StatusCreated).JSON(created)
 }
 
-func (h *Handlers) ApproveRoleAssignment(c *fiber.Ctx) error {
+func (h *Handlers) RevokeRole(c *fiber.Ctx) error {
 	actor, _ := c.Locals("user").(*models.User)
-	assignment, err := h.services.Access.ApproveAssignment(c.Params("id"), actor)
-	if err != nil {
-		return WriteAPIError(c, fiber.StatusBadRequest, "assignment_approval_failed", err.Error())
-	}
-	return c.JSON(assignment)
-}
-
-func (h *Handlers) RevokeRoleAssignment(c *fiber.Ctx) error {
-	actor, _ := c.Locals("user").(*models.User)
-	if err := h.services.Access.RevokeAssignment(c.Params("id"), actor); err != nil {
+	if err := h.services.Access.RevokeRole(c.Params("id"), actor); err != nil {
 		return WriteAPIError(c, fiber.StatusBadRequest, "assignment_revocation_failed", err.Error())
 	}
 	return c.SendStatus(fiber.StatusNoContent)
@@ -246,12 +314,11 @@ func (h *Handlers) AssignMentor(c *fiber.Ctx) error {
 	var input struct {
 		MemberID     string `json:"memberId"`
 		MentorUserID string `json:"mentorUserId"`
-		MemberUserID string `json:"memberUserId"`
 	}
 	if err := c.BodyParser(&input); err != nil {
 		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Payload mentorship tidak valid.")
 	}
-	if err := h.services.Access.AssignMentor(input.MemberID, input.MentorUserID, input.MemberUserID, actor); err != nil {
+	if err := h.services.Access.AssignMentor(input.MemberID, input.MentorUserID, actor); err != nil {
 		return WriteAPIError(c, fiber.StatusBadRequest, "mentorship_assignment_failed", err.Error())
 	}
 	return c.JSON(fiber.Map{"success": true})
@@ -322,40 +389,146 @@ func (h *Handlers) CreateCity(c *fiber.Ctx) error {
 	if err := c.BodyParser(&city); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
-	if city.OrganizationID == "" {
-		city.OrganizationID = "org-sion-ministry"
-	}
-	if city.MinistryUnitID == "" {
-		city.MinistryUnitID = "unit-sion-academy"
-	}
-	if city.RegionID == "" {
-		city.RegionID = "region-indonesia"
-	}
 	access, _ := c.Locals("access").(*models.AccessContext)
 	if !h.services.Access.CanCreateCity(access, &city) {
-		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Hierarchy kota berada di luar scope akun.")
+		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Hanya admin global dapat membuat kota.")
 	}
 	if err := h.services.City.Create(&city); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "city.created", "city", city.ID, "city", city.ID, nil)
 	return c.Status(fiber.StatusCreated).JSON(city)
 }
 
-// Members Handlers
-func (h *Handlers) GetMembers(c *fiber.Ctx) error {
-	members, err := h.services.Member.GetAll()
+// Location Reference Handlers
+func (h *Handlers) GetProvinces(c *fiber.Ctx) error {
+	query := c.Query("q")
+	provinces, err := h.services.Location.GetProvinces(query)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
-	user, _ := c.Locals("user").(*models.User)
-	access, _ := c.Locals("access").(*models.AccessContext)
-	filtered := make([]models.Member, 0, len(members))
-	for i := range members {
-		if h.services.Access.CanAccessMember(access, user, &members[i], false) {
-			filtered = append(filtered, members[i])
+	return c.JSON(provinces)
+}
+
+func (h *Handlers) GetCitiesByProvince(c *fiber.Ctx) error {
+	province := c.Query("province")
+	query := c.Query("q")
+	cities, err := h.services.Location.GetCitiesByProvince(province, query)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(cities)
+}
+
+// Members Handlers
+func memberQueryFromRequest(c *fiber.Ctx, access *models.AccessContext, user *models.User, includeArchivedAllowed bool) models.MemberListQuery {
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	pageSize, _ := strconv.Atoi(c.Query("pageSize", "20"))
+	query := models.MemberListQuery{
+		Page: page, PageSize: pageSize, Search: strings.TrimSpace(c.Query("q")), CityID: strings.TrimSpace(c.Query("cityId")),
+		Status: strings.ToLower(strings.TrimSpace(c.Query("status"))), IncludeArchived: includeArchivedAllowed && c.QueryBool("includeArchived", false),
+		CityIDs: access.CityIDs, AllCities: access.AllCities,
+	}
+	if hRole(access, "jemaat") {
+		query.SelfUserID = user.ID
+	}
+	return query
+}
+
+func hRole(access *models.AccessContext, role string) bool {
+	if access == nil {
+		return false
+	}
+	for _, value := range access.Roles {
+		if value == role {
+			return true
 		}
 	}
-	return c.JSON(filtered)
+	return false
+}
+
+func writeMemberServiceError(c *fiber.Ctx, err error) error {
+	var validation *service.MemberValidationError
+	if errors.As(err, &validation) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":  APIError{Code: "member_validation_failed", Message: validation.Error(), RequestID: requestID(c)},
+			"fields": validation.Fields,
+		})
+	}
+	var duplicate *service.MemberDuplicateConflictError
+	if errors.As(err, &duplicate) {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+			"error":      APIError{Code: "member_duplicate_candidates", Message: duplicate.Error(), RequestID: requestID(c)},
+			"candidates": duplicate.Candidates,
+		})
+	}
+	return WriteAPIError(c, fiber.StatusInternalServerError, "member_operation_failed", "Operasi Member 360 gagal diproses.")
+}
+
+func maskMemberResult(result *models.MemberListResult, user *models.User, canReadSensitive bool) {
+	if result == nil || canReadSensitive {
+		return
+	}
+	for index := range result.Items {
+		member := result.Items[index]
+		if member.ID != user.ID {
+			result.Items[index] = service.MaskMemberSensitive(member)
+		}
+	}
+}
+
+func (h *Handlers) GetMembers(c *fiber.Ctx) error {
+	user, _ := c.Locals("user").(*models.User)
+	access, _ := c.Locals("access").(*models.AccessContext)
+	canReviewArchived := h.services.Access.HasPermission(access, "member.archive") || h.services.Access.HasPermission(access, "member.history.read")
+	query := memberQueryFromRequest(c, access, user, canReviewArchived)
+	if query.CityID != "" && !h.services.Access.CanAccessCity(access, query.CityID) {
+		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Filter kota berada di luar scope akun.")
+	}
+	result, err := h.services.Member.List(query)
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusInternalServerError, "member_list_failed", "Gagal mengambil daftar anggota.")
+	}
+	canReadSensitive := h.services.Access.HasPermission(access, "member.sensitive.read")
+	maskMemberResult(result, user, canReadSensitive)
+	return c.JSON(result)
+}
+
+func (h *Handlers) GetMember(c *fiber.Ctx) error {
+	member, err := h.services.Member.GetByID(c.Params("id"))
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusNotFound, "member_not_found", "Anggota tidak ditemukan.")
+	}
+	user, _ := c.Locals("user").(*models.User)
+	access, _ := c.Locals("access").(*models.AccessContext)
+	if !h.services.Access.CanAccessMember(access, user, member, false) {
+		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Anggota berada di luar scope akun.")
+	}
+	if member.Status == "archived" && !h.services.Access.HasPermission(access, "member.archive") && !h.services.Access.HasPermission(access, "member.history.read") {
+		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Profil arsip membutuhkan izin histori atau archive.")
+	}
+	canReadSensitive := h.services.Access.HasPermission(access, "member.sensitive.read")
+	if !canReadSensitive && member.ID != user.ID {
+		masked := service.MaskMemberSensitive(*member)
+		member = &masked
+	}
+	return c.JSON(member)
+}
+
+func (h *Handlers) CheckMemberDuplicates(c *fiber.Ctx) error {
+	var member models.Member
+	if err := c.BodyParser(&member); err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Payload anggota tidak valid.")
+	}
+	access, _ := c.Locals("access").(*models.AccessContext)
+	if !h.services.Access.CanAccessCity(access, member.CityID) {
+		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Kota anggota berada di luar scope akun.")
+	}
+	candidates, err := h.services.Member.FindDuplicateCandidates(&member, strings.TrimSpace(c.Query("excludeId")), access.CityIDs, access.AllCities)
+	if err != nil {
+		return writeMemberServiceError(c, err)
+	}
+	return c.JSON(fiber.Map{"candidates": candidates})
 }
 
 func (h *Handlers) CreateMember(c *fiber.Ctx) error {
@@ -368,13 +541,13 @@ func (h *Handlers) CreateMember(c *fiber.Ctx) error {
 	if !h.services.Access.CanAccessCity(access, member.CityID) {
 		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Kota anggota berada di luar scope akun.")
 	}
-	if !h.services.Access.HasRole(access, "admin") {
-		member.UserID = nil
+	if !h.services.Access.HasRole(access, "admin") && member.MentorUserID == nil {
 		member.MentorUserID = localStringPointer(user.ID)
 	}
-	if err := h.services.Member.Create(&member); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	if err := h.services.Member.Create(&member, user.ID, access.CityIDs, access.AllCities); err != nil {
+		return writeMemberServiceError(c, err)
 	}
+	h.services.Access.RecordAudit(user.ID, "member.created", "member", member.ID, "city", member.CityID, "success", requestID(c), c.IP(), map[string]any{"duplicateOverride": member.DuplicateOverrideReason != ""})
 	return c.Status(fiber.StatusCreated).JSON(member)
 }
 
@@ -394,17 +567,18 @@ func (h *Handlers) UpdateMember(c *fiber.Ctx) error {
 		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Anggota berada di luar scope akun.")
 	}
 	if !h.services.Access.HasRole(access, "admin") {
-		member.UserID = existing.UserID
-		member.MentorUserID = localStringPointer(user.ID)
+		member.MentorUserID = existing.MentorUserID
+		member.MentorName = existing.MentorName
 	}
 	member.ID = id
-	if err := h.services.Member.Update(&member); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	if err := h.services.Member.Update(&member, user.ID, access.CityIDs, access.AllCities); err != nil {
+		return writeMemberServiceError(c, err)
 	}
+	h.services.Access.RecordAudit(user.ID, "member.updated", "member", member.ID, "city", member.CityID, "success", requestID(c), c.IP(), map[string]any{"version": member.Version, "duplicateOverride": member.DuplicateOverrideReason != ""})
 	return c.JSON(member)
 }
 
-func (h *Handlers) DeleteMember(c *fiber.Ctx) error {
+func (h *Handlers) ArchiveMember(c *fiber.Ctx) error {
 	id := c.Params("id")
 	existing, err := h.services.Member.GetByID(id)
 	if err != nil {
@@ -415,10 +589,75 @@ func (h *Handlers) DeleteMember(c *fiber.Ctx) error {
 	if !h.services.Access.CanAccessMember(access, user, existing, true) {
 		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Anggota berada di luar scope akun.")
 	}
-	if err := h.services.Member.Delete(id); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	var input struct {
+		Reason string `json:"reason"`
 	}
+	if err := c.BodyParser(&input); err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Payload archive tidak valid.")
+	}
+	if err := h.services.Member.Archive(existing, user.ID, input.Reason); err != nil {
+		return writeMemberServiceError(c, err)
+	}
+	h.services.Access.RecordAudit(user.ID, "member.archived", "member", existing.ID, "city", existing.CityID, "success", requestID(c), c.IP(), map[string]any{"reason": strings.TrimSpace(input.Reason)})
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *Handlers) GetMemberHistory(c *fiber.Ctx) error {
+	member, err := h.services.Member.GetByID(c.Params("id"))
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusNotFound, "member_not_found", "Anggota tidak ditemukan.")
+	}
+	user, _ := c.Locals("user").(*models.User)
+	access, _ := c.Locals("access").(*models.AccessContext)
+	if !h.services.Access.CanAccessMember(access, user, member, false) {
+		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Anggota berada di luar scope akun.")
+	}
+	history, err := h.services.Member.GetHistory(member.ID)
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusInternalServerError, "member_history_failed", "Gagal mengambil histori anggota.")
+	}
+	return c.JSON(history)
+}
+
+func safeCSVCell(value string) string {
+	if value != "" && strings.ContainsAny(value[:1], "=+-@") {
+		return "'" + value
+	}
+	return value
+}
+
+func (h *Handlers) ExportMembers(c *fiber.Ctx) error {
+	user, _ := c.Locals("user").(*models.User)
+	access, _ := c.Locals("access").(*models.AccessContext)
+	reason := strings.TrimSpace(c.Query("reason"))
+	if len([]rune(reason)) < 10 {
+		return WriteAPIError(c, fiber.StatusBadRequest, "export_reason_required", "Alasan export minimal 10 karakter.")
+	}
+	query := memberQueryFromRequest(c, access, user, false)
+	if query.CityID != "" && !h.services.Access.CanAccessCity(access, query.CityID) {
+		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", "Filter kota berada di luar scope akun.")
+	}
+	if strings.TrimSpace(c.Query("status")) == "archived" || c.QueryBool("includeArchived", false) {
+		return WriteAPIError(c, fiber.StatusBadRequest, "archived_export_forbidden", "Record archived tidak dapat diekspor.")
+	}
+	members, err := h.services.Member.Export(query)
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusInternalServerError, "member_export_failed", "Export anggota gagal.")
+	}
+	buffer := &bytes.Buffer{}
+	writer := csv.NewWriter(buffer)
+	_ = writer.Write([]string{"id", "name", "masked_phone", "masked_email", "city", "status", "joined_on", "consent_status"})
+	for _, member := range members {
+		_ = writer.Write([]string{member.ID, safeCSVCell(member.Name), service.MaskPhone(member.Phone), service.MaskEmail(member.Email), safeCSVCell(member.CityName), member.Status, member.JoinedOn.Format("2006-01-02"), member.ConsentStatus})
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return WriteAPIError(c, fiber.StatusInternalServerError, "member_export_failed", "Export anggota gagal.")
+	}
+	h.services.Access.RecordAudit(user.ID, "member.exported", "member_export", "", "", "", "success", requestID(c), c.IP(), map[string]any{"reason": reason, "recordCount": len(members), "masked": true})
+	c.Set(fiber.HeaderContentType, "text/csv; charset=utf-8")
+	c.Set(fiber.HeaderContentDisposition, `attachment; filename="member-360-masked.csv"`)
+	return c.Send(buffer.Bytes())
 }
 
 // BeritaAcara Handlers
@@ -457,6 +696,7 @@ func (h *Handlers) CreateBerita(c *fiber.Ctx) error {
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "event.created", "event", b.ID, "city", b.CityID, nil)
 	return c.Status(fiber.StatusCreated).JSON(b)
 }
 
@@ -473,6 +713,7 @@ func (h *Handlers) DeleteBerita(c *fiber.Ctx) error {
 	if err := h.services.Berita.Delete(id); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "event.deleted", "event", id, "city", existing.CityID, nil)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -487,15 +728,15 @@ func (h *Handlers) GetAttendance(c *fiber.Ctx) error {
 
 func (h *Handlers) CheckInAttendance(c *fiber.Ctx) error {
 	var input struct {
-		EventID  string `json:"eventId"`
-		MemberID string `json:"memberId"`
+		EventID string `json:"eventId"`
+		UserID  string `json:"userId"`
 	}
 	if err := c.BodyParser(&input); err != nil {
 		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Payload check-in tidak valid.")
 	}
 	user, _ := c.Locals("user").(*models.User)
 	access, _ := c.Locals("access").(*models.AccessContext)
-	record, err := h.services.Access.CheckIn(access, user, input.EventID, input.MemberID)
+	record, err := h.services.Access.CheckIn(access, user, input.EventID, input.UserID)
 	if err != nil {
 		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", err.Error())
 	}
@@ -538,6 +779,7 @@ func (h *Handlers) CreateJurnalPA(c *fiber.Ctx) error {
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "journal.created", "journal", j.ID, "city", j.CityID, nil)
 	return c.Status(fiber.StatusCreated).JSON(j)
 }
 
@@ -559,6 +801,7 @@ func (h *Handlers) DeleteJurnalPA(c *fiber.Ctx) error {
 	if err := h.services.Jurnal.Delete(id); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "journal.deleted", "journal", id, "city", existing.CityID, nil)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -579,6 +822,7 @@ func (h *Handlers) CreateCampaign(c *fiber.Ctx) error {
 	if err := h.services.Donation.CreateCampaign(&campaign); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "campaign.created", "campaign", campaign.ID, "", "", nil)
 	return c.Status(fiber.StatusCreated).JSON(campaign)
 }
 
@@ -611,6 +855,8 @@ func (h *Handlers) CreateDonationRecord(c *fiber.Ctx) error {
 	if err := h.services.Donation.CreateRecord(&record); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	scopeType, scopeID := cityAuditScope(record.CityID)
+	h.recordMutationAudit(c, "donation.created", "donation", record.ID, scopeType, scopeID, nil)
 	return c.Status(fiber.StatusCreated).JSON(record)
 }
 
@@ -628,7 +874,7 @@ func (h *Handlers) VerifyDonationRecord(c *fiber.Ctx) error {
 	if err != nil {
 		return WriteAPIError(c, fiber.StatusInternalServerError, "donation_verification_failed", "Gagal memverifikasi donasi.")
 	}
-	h.services.Access.RecordAudit(user.ID, "donation.verified", "donation", record.ID, "city", *record.CityID, "success", requestID(c), c.IP(), nil)
+	h.recordMutationAudit(c, "donation.verified", "donation", record.ID, "city", *record.CityID, nil)
 	return c.JSON(record)
 }
 
@@ -649,6 +895,7 @@ func (h *Handlers) CreateLink(c *fiber.Ctx) error {
 	if err := h.services.Link.Create(&link); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "link.created", "link", link.ID, "", "", nil)
 	return c.Status(fiber.StatusCreated).JSON(link)
 }
 
@@ -662,6 +909,7 @@ func (h *Handlers) UpdateLink(c *fiber.Ctx) error {
 	if err := h.services.Link.Update(&link); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "link.updated", "link", link.ID, "", "", nil)
 	return c.JSON(link)
 }
 
@@ -670,6 +918,7 @@ func (h *Handlers) DeleteLink(c *fiber.Ctx) error {
 	if err := h.services.Link.Delete(id); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "link.deleted", "link", id, "", "", nil)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -690,6 +939,7 @@ func (h *Handlers) CreateJob(c *fiber.Ctx) error {
 	if err := h.services.Job.CreateJob(&job); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "job.created", "job", job.ID, "", "", nil)
 	return c.Status(fiber.StatusCreated).JSON(job)
 }
 
@@ -722,6 +972,8 @@ func (h *Handlers) CreateJobApplication(c *fiber.Ctx) error {
 	if err := h.services.Job.CreateApplication(&app); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	scopeType, scopeID := cityAuditScope(app.CityID)
+	h.recordMutationAudit(c, "job_application.created", "job_application", app.ID, scopeType, scopeID, map[string]any{"jobId": app.JobID})
 	return c.Status(fiber.StatusCreated).JSON(app)
 }
 
@@ -744,6 +996,7 @@ func (h *Handlers) UpdateModule(c *fiber.Ctx) error {
 	if err := h.services.Module.Update(&module); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	h.recordMutationAudit(c, "module.updated", "module", module.ID, "", "", nil)
 	return c.JSON(module)
 }
 
@@ -778,9 +1031,16 @@ func (h *Handlers) Sync(c *fiber.Ctx) error {
 		return WriteAPIError(c, fiber.StatusForbidden, "scope_forbidden", err.Error())
 	}
 
-	if err := h.services.Sync.Sync(&payload); err != nil {
+	if err := h.services.Sync.Sync(&payload, user.ID, access.CityIDs, access.AllCities); err != nil {
 		log.Printf("Sync Error: %v", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		return WriteAPIError(c, fiber.StatusBadRequest, "sync_validation_failed", err.Error())
+	}
+	for _, item := range payload.PendingChanges {
+		action := strings.ToLower(strings.TrimSpace(item.Action))
+		if action != "create" && action != "update" && action != "delete" {
+			continue
+		}
+		h.recordMutationAudit(c, "sync."+action, strings.TrimSpace(item.ItemType), strings.TrimSpace(item.ID), "", "", map[string]any{"source": "offline_sync"})
 	}
 
 	return c.JSON(fiber.Map{"success": true})

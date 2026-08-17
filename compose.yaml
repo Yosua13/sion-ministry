@@ -19,7 +19,9 @@ services:
     restart: unless-stopped
     env_file: backend/.env
     environment:
-      APP_ENV: production
+      # Default development keeps local Docker usable without an SMTP service.
+      # Set APP_ENV=production together with SMTP_* and HTTPS values when deploying.
+      APP_ENV: ${APP_ENV:-development}
       DB_HOST: postgres
       DB_PORT: "5432"
     depends_on:

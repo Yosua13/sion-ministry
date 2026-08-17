@@ -30,6 +30,13 @@ type Config struct {
 	S3Prefix               string
 	S3UsePathStyle         bool
 	SignedURLTTL           time.Duration
+	InvitationTTL          time.Duration
+	AppPublicURL           string
+	SMTPHost               string
+	SMTPPort               string
+	SMTPUsername           string
+	SMTPPassword           string
+	SMTPFrom               string
 }
 
 func LoadConfig() (*Config, error) {
@@ -69,6 +76,24 @@ func LoadConfig() (*Config, error) {
 	if s3Bucket != "" && strings.TrimSpace(os.Getenv("S3_REGION")) == "" {
 		return nil, fmt.Errorf("S3_REGION must be set when S3_BUCKET is configured")
 	}
+	invitationTTL, err := time.ParseDuration(getEnv("INVITATION_TTL", "72h"))
+	if err != nil || invitationTTL <= 0 || invitationTTL > 14*24*time.Hour {
+		return nil, fmt.Errorf("INVITATION_TTL must be between 1ns and 336h")
+	}
+	smtpHost := strings.TrimSpace(os.Getenv("SMTP_HOST"))
+	smtpUsername := getEnvFirst("SMTP_USERNAME", "SMTP_USER")
+	smtpPassword := getEnvFirst("SMTP_PASSWORD", "SMTP_PASS")
+	smtpFrom := getEnvFirst("SMTP_FROM", "SMTP_SENDER")
+	smtpConfigured := smtpHost != "" || smtpUsername != "" || smtpPassword != "" || smtpFrom != ""
+	if smtpConfigured && (smtpHost == "" || smtpFrom == "") {
+		return nil, fmt.Errorf("SMTP configuration is incomplete: SMTP_HOST and SMTP_FROM (or SMTP_SENDER) must be set together")
+	}
+	if (smtpUsername == "") != (smtpPassword == "") {
+		return nil, fmt.Errorf("SMTP_USERNAME (or SMTP_USER) and SMTP_PASSWORD (or SMTP_PASS) must be set together")
+	}
+	if appEnv == "production" && !smtpConfigured {
+		return nil, fmt.Errorf("SMTP_HOST and SMTP_FROM must be set in production")
+	}
 
 	return &Config{
 		DBHost:                 os.Getenv("DB_HOST"),
@@ -91,6 +116,13 @@ func LoadConfig() (*Config, error) {
 		S3Prefix:               strings.Trim(strings.TrimSpace(getEnv("S3_PREFIX", "uploads")), "/"),
 		S3UsePathStyle:         strings.EqualFold(getEnv("S3_USE_PATH_STYLE", "false"), "true"),
 		SignedURLTTL:           signedURLTTL,
+		InvitationTTL:          invitationTTL,
+		AppPublicURL:           strings.TrimRight(strings.TrimSpace(getEnv("APP_PUBLIC_URL", "http://localhost:5173")), "/"),
+		SMTPHost:               smtpHost,
+		SMTPPort:               getEnv("SMTP_PORT", "587"),
+		SMTPUsername:           smtpUsername,
+		SMTPPassword:           smtpPassword,
+		SMTPFrom:               smtpFrom,
 	}, nil
 }
 
@@ -99,6 +131,17 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// getEnvFirst supports the documented SMTP names and the shorter aliases used
+// by several SMTP providers/tutorials. The first non-empty value wins.
+func getEnvFirst(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func splitCSV(value string) []string {

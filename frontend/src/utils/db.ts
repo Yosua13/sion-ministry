@@ -1,5 +1,5 @@
-import { Member, BeritaAcara, JurnalPA, DonationCampaign, DonationRecord, City, DiscipleshipLink, DiscipleshipModule, SyncPendingChange, SyncState, JobOpportunity, JobApplication, AuthRole, AuthSession, AuthUser, AccessContext, RoleAssignment, ScopeCatalog, AuditLog, DeviceSession } from "../types";
-import { initialCities, initialModules, initialMembers, initialBeritaAcara, initialJurnalPA, initialDonationCampaigns, initialLinks, initialJobs } from "../data/initialData";
+import { Member, MemberDuplicateCandidate, MemberHistoryResult, MemberListResult, BeritaAcara, JurnalPA, DonationCampaign, DonationRecord, City, DiscipleshipLink, DiscipleshipModule, SyncPendingChange, SyncState, JobOpportunity, JobApplication, AuthRole, AuthSession, AuthUser, AccessContext, RoleAssignment, ScopeCatalog, AuditLog, DeviceSession, ScopedRole } from "../types";
+import { initialCities, initialModules, initialBeritaAcara, initialJurnalPA, initialDonationCampaigns, initialLinks, initialJobs } from "../data/initialData";
 
 const STORAGE_KEYS = {
   CITIES: "sion_cities",
@@ -13,10 +13,15 @@ const STORAGE_KEYS = {
   SYNC_STATE: "sion_sync_state",
   JOBS: "sion_jobs",
   APPLICATIONS: "sion_applications",
-  AUTH_SESSION: "sion_auth_session",
 };
 
 export class SionDatabase {
+  private static activeSession: AuthSession | null = null;
+
+  private static csrfHeader(): Record<string, string> {
+    const value = document.cookie.split("; ").find((item) => item.startsWith("sion_csrf="))?.split("=")[1];
+    return value ? { "X-CSRF-Token": decodeURIComponent(value) } : {};
+  }
   private static clearScopedOperationalData() {
     [STORAGE_KEYS.CITIES, STORAGE_KEYS.MEMBERS, STORAGE_KEYS.BERITA, STORAGE_KEYS.JURNAL_PA, STORAGE_KEYS.DONATIONS, STORAGE_KEYS.APPLICATIONS].forEach((key) => localStorage.setItem(key, "[]"));
   }
@@ -66,22 +71,9 @@ export class SionDatabase {
     if (!localStorage.getItem(STORAGE_KEYS.MODULES)) {
       localStorage.setItem(STORAGE_KEYS.MODULES, JSON.stringify(initialModules));
     }
-    if (!localStorage.getItem(STORAGE_KEYS.MEMBERS)) {
-      localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(initialMembers));
-    }
-    const storedMembers = localStorage.getItem(STORAGE_KEYS.MEMBERS);
-    if (storedMembers) {
-      try {
-        const parsedMembers = JSON.parse(storedMembers) as Member[];
-        const normalizedMembers = this.normalizeMembers(parsedMembers);
-        const hasLegacyStage = parsedMembers.some((member, index) => member.discipleshipStage !== normalizedMembers[index].discipleshipStage);
-        if (hasLegacyStage) {
-          localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(normalizedMembers));
-        }
-      } catch {
-        localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(initialMembers));
-      }
-    }
+    // Member profiles contain PII and must not be cached in browser localStorage.
+    // The Member screen reads them from the authorized server endpoint on demand.
+    localStorage.removeItem(STORAGE_KEYS.MEMBERS);
     if (!localStorage.getItem(STORAGE_KEYS.BERITA)) {
       localStorage.setItem(STORAGE_KEYS.BERITA, JSON.stringify(initialBeritaAcara));
     }
@@ -118,31 +110,31 @@ export class SionDatabase {
 
   // --- Auth Helpers ---
   static getAuthSession(): AuthSession | null {
-    this.init();
-    const session = localStorage.getItem(STORAGE_KEYS.AUTH_SESSION);
-    if (!session) return null;
-
-    const parsed = JSON.parse(session) as AuthSession;
-    if (new Date(parsed.expiresAt).getTime() <= Date.now()) {
-      localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
-      return null;
-    }
-    return parsed;
+    return this.activeSession;
   }
 
-  static getAuthToken(): string | null {
-    return this.getAuthSession()?.token || null;
+  static async restoreAuthSession(): Promise<AuthSession | null> {
+    try {
+      const response = await fetch("/api/auth/me", { credentials: "same-origin" });
+      if (!response.ok) return null;
+      const user = await response.json() as AuthUser;
+      this.activeSession = { user, expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() };
+      return this.activeSession;
+    } catch {
+      return null;
+    }
   }
 
   static async login(email: string, password: string): Promise<AuthSession> {
     this.init();
-    const previousUserId = this.getAuthSession()?.user.id;
+    const previousUserId = this.activeSession?.user.id;
     let response: Response;
     try {
       response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
+        credentials: "same-origin",
       });
     } catch {
       throw new Error("Server autentikasi tidak dapat dihubungi. Koneksi diperlukan untuk masuk.");
@@ -152,67 +144,44 @@ export class SionDatabase {
     }
     const session = await response.json() as AuthSession;
     if (previousUserId !== session.user.id) this.clearScopedOperationalData();
-    localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, JSON.stringify(session));
+    this.activeSession = session;
     return session;
   }
 
-  static async register(input: { name: string; email: string; password: string; role: AuthRole; cityId?: string; cityName?: string }): Promise<AuthUser> {
-    this.init();
-    let response: Response;
-    try {
-      response = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      });
-    } catch {
-      throw new Error("Server autentikasi tidak dapat dihubungi. Koneksi diperlukan untuk mendaftar.");
-    }
-    if (!response.ok) {
-      throw new Error(await this.readApiError(response) || "Pendaftaran gagal. Silakan coba lagi.");
-    }
-    return await response.json() as AuthUser;
+  static async activate(token: string, password: string): Promise<AuthSession> {
+    const response = await fetch("/api/auth/activate", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, password }) });
+    if (!response.ok) throw new Error(await this.readApiError(response) || "Aktivasi akun gagal.");
+    const session = await response.json() as AuthSession;
+    this.activeSession = session;
+    return session;
   }
 
   static async getAuthUsers(): Promise<AuthUser[]> {
     this.init();
-    const token = this.getAuthToken();
-    if (!token) {
+    if (!this.activeSession) {
       throw new Error("Sesi tidak ditemukan. Silakan masuk kembali.");
     }
-    const response = await fetch("/api/auth/users", { headers: { Authorization: `Bearer ${token}` } });
+    const response = await fetch("/api/auth/users", { credentials: "same-origin" });
     if (!response.ok) {
       throw new Error(await this.readApiError(response) || "Tidak dapat mengambil daftar pengguna.");
     }
     return await response.json() as AuthUser[];
   }
 
-  static async approveUser(id: string): Promise<AuthUser> {
-    this.init();
-    const token = this.getAuthToken();
-    if (!token) {
-      throw new Error("Sesi tidak ditemukan. Silakan masuk kembali.");
-    }
-    const response = await fetch(`/api/auth/users/${id}/approve`, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!response.ok) {
-      throw new Error(await this.readApiError(response) || "Persetujuan pengguna gagal.");
-    }
-    return await response.json() as AuthUser;
+  static async resendInvitation(id: string): Promise<void> {
+    return this.authenticatedJson<void>(`/api/auth/users/${id}/resend-invitation`, { method: "POST" });
   }
 
   private static async authenticatedJson<T>(url: string, init: RequestInit = {}): Promise<T> {
-    const token = this.getAuthToken();
-    if (!token) throw new Error("Sesi tidak ditemukan. Silakan masuk kembali.");
+    if (!this.activeSession) throw new Error("Sesi tidak ditemukan. Silakan masuk kembali.");
     const response = await fetch(url, {
       ...init,
       headers: {
         ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...this.csrfHeader(),
         ...init.headers,
-        Authorization: `Bearer ${token}`,
       },
+      credentials: "same-origin",
     });
     if (!response.ok) throw new Error(await this.readApiError(response) || "Permintaan gagal diproses.");
     if (response.status === 204) return undefined as T;
@@ -224,31 +193,117 @@ export class SionDatabase {
   }
 
   static getRoleAssignments(): Promise<RoleAssignment[]> {
-    return this.authenticatedJson<RoleAssignment[]>("/api/auth/role-assignments");
+    return this.authenticatedJson<Array<{ id: string; userId: string; role: ScopedRole; cityId?: string; grantedAt: string; revokedAt?: string }>>("/api/auth/roles").then((roles) => roles.map((role) => ({ id: role.id, userId: role.userId, role: role.role, scopeType: role.cityId ? "city" : "global", scopeId: role.cityId || "global", status: role.revokedAt ? "revoked" : "active", validFrom: role.grantedAt, createdAt: role.grantedAt, revokedAt: role.revokedAt })));
   }
 
   static createRoleAssignment(input: Pick<RoleAssignment, "userId" | "role" | "scopeType" | "scopeId"> & { validUntil?: string }): Promise<RoleAssignment> {
-    return this.authenticatedJson<RoleAssignment>("/api/auth/role-assignments", { method: "POST", body: JSON.stringify(input) });
-  }
-
-  static approveRoleAssignment(id: string): Promise<RoleAssignment> {
-    return this.authenticatedJson<RoleAssignment>(`/api/auth/role-assignments/${id}/approve`, { method: "PUT" });
+    return this.authenticatedJson<RoleAssignment>("/api/auth/roles", { method: "POST", body: JSON.stringify({ userId: input.userId, role: input.role, cityId: input.role === "admin" ? undefined : input.scopeId }) });
   }
 
   static revokeRoleAssignment(id: string): Promise<void> {
-    return this.authenticatedJson<void>(`/api/auth/role-assignments/${id}`, { method: "DELETE" });
+    return this.authenticatedJson<void>(`/api/auth/roles/${id}`, { method: "DELETE" });
   }
 
-  static assignMentor(input: { memberId: string; mentorUserId: string; memberUserId?: string }): Promise<{ success: boolean }> {
+  static assignMentor(input: { memberId: string; mentorUserId: string }): Promise<{ success: boolean }> {
     return this.authenticatedJson<{ success: boolean }>("/api/auth/mentorships", { method: "POST", body: JSON.stringify(input) });
   }
 
   static getScopedMembers(): Promise<Member[]> {
-    return this.authenticatedJson<Member[]>("/api/members");
+    return this.authenticatedJson<MemberListResult>("/api/members?pageSize=100").then((result) => result.items);
+  }
+
+  private static async memberJson<T>(url: string, init: RequestInit = {}): Promise<T> {
+    if (!this.activeSession) throw new Error("Sesi tidak ditemukan. Silakan login kembali.");
+    const response = await fetch(url, {
+      ...init,
+      headers: {
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...this.csrfHeader(),
+        ...init.headers,
+      },
+      credentials: "same-origin",
+    });
+    if (!response.ok) {
+      let payload: any = {};
+      try { payload = await response.json(); } catch { /* response tanpa JSON */ }
+      const error: any = new Error(payload?.error?.message || "Operasi Member 360 gagal diproses.");
+      error.code = payload?.error?.code;
+      error.fields = payload?.fields || {};
+      error.candidates = payload?.candidates || [];
+      error.status = response.status;
+      throw error;
+    }
+    if (response.status === 204) return undefined as T;
+    return response.json() as Promise<T>;
+  }
+
+  static listMembers(params: { page?: number; pageSize?: number; q?: string; cityId?: string; status?: string; includeArchived?: boolean } = {}): Promise<MemberListResult> {
+    const query = new URLSearchParams();
+    query.set("page", String(params.page || 1));
+    query.set("pageSize", String(params.pageSize || 12));
+    if (params.q?.trim()) query.set("q", params.q.trim());
+    if (params.cityId) query.set("cityId", params.cityId);
+    if (params.status) query.set("status", params.status);
+    if (params.includeArchived) query.set("includeArchived", "true");
+    return this.memberJson<MemberListResult>(`/api/members?${query.toString()}`);
+  }
+
+  static checkMemberDuplicates(member: Partial<Member>, excludeId?: string): Promise<MemberDuplicateCandidate[]> {
+    const suffix = excludeId ? `?excludeId=${encodeURIComponent(excludeId)}` : "";
+    return this.memberJson<{ candidates: MemberDuplicateCandidate[] }>(`/api/members/duplicates${suffix}`, {
+      method: "POST", body: JSON.stringify(member),
+    }).then((result) => result.candidates);
+  }
+
+  static createMember360(member: Omit<Member, "id">): Promise<Member> {
+    return this.memberJson<Member>("/api/members", { method: "POST", body: JSON.stringify(member) });
+  }
+
+  static updateMember360(member: Member): Promise<Member> {
+    return this.memberJson<Member>(`/api/members/${member.id}`, { method: "PUT", body: JSON.stringify(member) });
+  }
+
+  static archiveMember(id: string, reason: string): Promise<void> {
+    return this.memberJson<void>(`/api/members/${id}/archive`, { method: "POST", body: JSON.stringify({ reason }) });
+  }
+
+  static getMemberHistory(id: string): Promise<MemberHistoryResult> {
+    return this.memberJson<MemberHistoryResult>(`/api/members/${id}/history`);
+  }
+
+  static async exportMembersMasked(reason: string, filters: { q?: string; cityId?: string; status?: string } = {}): Promise<void> {
+    if (!this.activeSession) throw new Error("Sesi tidak ditemukan. Silakan login kembali.");
+    const query = new URLSearchParams({ reason });
+    if (filters.q?.trim()) query.set("q", filters.q.trim());
+    if (filters.cityId) query.set("cityId", filters.cityId);
+    if (filters.status) query.set("status", filters.status);
+    const response = await fetch(`/api/members/export?${query.toString()}`, { credentials: "same-origin" });
+    if (!response.ok) throw new Error(await this.readApiError(response) || "Export anggota gagal.");
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "member-360-masked.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   static getScopeCatalog(): Promise<ScopeCatalog> {
     return this.authenticatedJson<ScopeCatalog>("/api/auth/scopes");
+  }
+
+  static getProvinces(query?: string): Promise<{ id: string; name: string }[]> {
+    const url = query && query.trim().length > 0
+      ? `/api/reference/provinces?q=${encodeURIComponent(query.trim())}`
+      : "/api/reference/provinces";
+    return this.authenticatedJson<{ id: string; name: string }[]>(url);
+  }
+
+  static getCitiesByProvince(province: string, query?: string): Promise<{ id: string; name: string; provinceId: string; provinceName: string }[]> {
+    const params = new URLSearchParams();
+    if (province) params.append("province", province.trim());
+    if (query && query.trim().length > 0) params.append("q", query.trim());
+    return this.authenticatedJson<{ id: string; name: string; provinceId: string; provinceName: string }[]>(`/api/reference/cities?${params.toString()}`);
   }
 
   static getAuditLogs(): Promise<AuditLog[]> {
@@ -265,27 +320,21 @@ export class SionDatabase {
   }
 
   static logout() {
-    const token = this.getAuthToken();
-    localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
+    this.activeSession = null;
     this.clearScopedOperationalData();
-    if (token) {
-      fetch("/api/auth/logout", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      }).catch(() => undefined);
-    }
+    fetch("/api/auth/logout", { method: "POST", credentials: "same-origin", headers: this.csrfHeader() }).catch(() => undefined);
   }
 
   // --- API Helper ---
   private static async apiRequest(url: string, method: string, data?: any): Promise<boolean> {
     try {
-      const token = this.getAuthToken();
       const response = await fetch(url, {
         method,
         headers: {
           ...(data ? { "Content-Type": "application/json" } : {}),
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...this.csrfHeader(),
         },
+        credentials: "same-origin",
         body: data ? JSON.stringify(data) : undefined,
       });
       return response.ok;
@@ -301,12 +350,11 @@ export class SionDatabase {
     if (!state.isOnline) return;
 
     try {
-      const token = this.getAuthToken();
-      const requestInit: RequestInit = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
-      const [cities, modules, members, berita, journals, campaigns, donations, links, jobs, applications] = await Promise.all([
+      const requestInit: RequestInit = { credentials: "same-origin" };
+      const [cities, modules, , berita, journals, campaigns, donations, links, jobs, applications] = await Promise.all([
         fetch("/api/cities", requestInit).then(res => res.ok ? res.json() : null),
         fetch("/api/modules", requestInit).then(res => res.ok ? res.json() : null),
-        fetch("/api/members", requestInit).then(res => res.ok ? res.json() : null),
+        fetch("/api/members?pageSize=100", requestInit).then(res => res.ok ? res.json() : null),
         fetch("/api/berita", requestInit).then(res => res.ok ? res.json() : null),
         fetch("/api/jurnal-pa", requestInit).then(res => res.ok ? res.json() : null),
         fetch("/api/campaigns", requestInit).then(res => res.ok ? res.json() : null),
@@ -318,7 +366,6 @@ export class SionDatabase {
 
       if (cities) localStorage.setItem(STORAGE_KEYS.CITIES, JSON.stringify(cities));
       if (modules) localStorage.setItem(STORAGE_KEYS.MODULES, JSON.stringify(modules));
-      if (members) localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(this.normalizeMembers(members)));
       if (berita) localStorage.setItem(STORAGE_KEYS.BERITA, JSON.stringify(berita));
       if (journals) localStorage.setItem(STORAGE_KEYS.JURNAL_PA, JSON.stringify(journals));
       if (campaigns) localStorage.setItem(STORAGE_KEYS.CAMPAIGNS, JSON.stringify(campaigns));
@@ -435,76 +482,7 @@ export class SionDatabase {
 
   // --- Members CRUD Helpers ---
   static getMembers(): Member[] {
-    this.init();
-    return JSON.parse(localStorage.getItem(STORAGE_KEYS.MEMBERS) || "[]");
-  }
-
-  static saveMembers(members: Member[]) {
-    localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(members));
-    this.recalculateCityStats();
-  }
-
-  static addMember(member: Omit<Member, "id">): Member {
-    const members = this.getMembers();
-    const newMember: Member = {
-      ...member,
-      id: "mem-" + Date.now(),
-    };
-    members.unshift(newMember);
-    this.saveMembers(members);
-
-    // Write to Go backend
-    const syncState = this.getSyncState();
-    if (syncState.isOnline) {
-      this.apiRequest("/api/members", "POST", newMember).then((ok) => {
-        if (!ok) {
-          this.addPendingChange({ id: newMember.id, itemType: "member", action: "create", data: newMember });
-        }
-      });
-    } else {
-      this.addPendingChange({ id: newMember.id, itemType: "member", action: "create", data: newMember });
-    }
-
-    return newMember;
-  }
-
-  static updateMember(member: Member): Member {
-    const members = this.getMembers();
-    const updated = members.map((m) => (m.id === member.id ? member : m));
-    this.saveMembers(updated);
-
-    // Write to Go backend
-    const syncState = this.getSyncState();
-    if (syncState.isOnline) {
-      this.apiRequest(`/api/members/${member.id}`, "PUT", member).then((ok) => {
-        if (!ok) {
-          this.addPendingChange({ id: member.id, itemType: "member", action: "update", data: member });
-        }
-      });
-    } else {
-      this.addPendingChange({ id: member.id, itemType: "member", action: "update", data: member });
-    }
-
-    return member;
-  }
-
-  static deleteMember(id: string) {
-    const members = this.getMembers();
-    const memberToDelete = members.find((m) => m.id === id);
-    const updated = members.filter((m) => m.id !== id);
-    this.saveMembers(updated);
-
-    // Write to Go backend
-    const syncState = this.getSyncState();
-    if (syncState.isOnline) {
-      this.apiRequest(`/api/members/${id}`, "DELETE").then((ok) => {
-        if (!ok && memberToDelete) {
-          this.addPendingChange({ id: id, itemType: "member", action: "delete", data: memberToDelete });
-        }
-      });
-    } else if (memberToDelete) {
-      this.addPendingChange({ id: id, itemType: "member", action: "delete", data: memberToDelete });
-    }
+    return [];
   }
 
   // --- Berita Acara CRUD Helpers ---
@@ -828,17 +806,14 @@ export class SionDatabase {
   // --- Recalculate Stats Helper ---
   private static recalculateCityStats() {
     const cities = this.getCities();
-    const members = this.getMembers();
     const berita = this.getBerita();
     const jurnalPa = this.getJurnalPA();
 
     const updatedCities = cities.map((city) => {
-      const cityMembers = members.filter((m) => m.cityId === city.id || m.cityName.toLowerCase() === city.name.toLowerCase());
       const cityBerita = berita.filter((b) => b.cityId === city.id || b.cityName.toLowerCase() === city.name.toLowerCase());
       const cityJurnalPa = jurnalPa.filter((j) => j.cityId === city.id || j.cityName.toLowerCase() === city.name.toLowerCase());
       return {
         ...city,
-        membersCount: cityMembers.length,
         beritaCount: cityBerita.length,
         jurnalPaCount: cityJurnalPa.length,
         journalsCount: cityBerita.length + cityJurnalPa.length,
@@ -861,10 +836,8 @@ export class SionDatabase {
       try {
         const response = await fetch("/api/sync", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(this.getAuthToken() ? { Authorization: `Bearer ${this.getAuthToken()}` } : {}),
-          },
+          headers: { "Content-Type": "application/json", ...this.csrfHeader() },
+          credentials: "same-origin",
           body: JSON.stringify({ pendingChanges: state.pendingChanges }),
         });
 

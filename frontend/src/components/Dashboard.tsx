@@ -13,8 +13,10 @@ import {
   HeartHandshake
 } from "lucide-react";
 import { City, Member, BeritaAcara, JurnalPA, DonationCampaign, SyncState } from "../types";
+import { SionDatabase } from "../utils/db";
+import { LocationAutocomplete } from "./LocationAutocomplete";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 
 interface DashboardProps {
   cities: City[];
@@ -42,9 +44,34 @@ export default function Dashboard({
   const [newCityName, setNewCityName] = useState("");
   const [newCityRegion, setNewCityRegion] = useState("");
   const [newCityReachedDate, setNewCityReachedDate] = useState("");
-  const [newCityWorkersCount, setNewCityWorkersCount] = useState(1);
   const [cityFormErrors, setCityFormErrors] = useState<Record<string, string>>({});
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
+
+  const fetchProvinceSuggestions = useCallback(async (query: string) => {
+    try {
+      const provinces = await SionDatabase.getProvinces(query);
+      return provinces.map((p) => p.name);
+    } catch (err) {
+      console.error("Failed to fetch provinces:", err);
+      return [];
+    }
+  }, []);
+
+  const fetchCitySuggestions = useCallback(async (query: string) => {
+    if (!newCityRegion.trim()) return [];
+    try {
+      const cities = await SionDatabase.getCitiesByProvince(newCityRegion, query);
+      return cities.map((c) => c.name);
+    } catch (err) {
+      console.error("Failed to fetch cities:", err);
+      return [];
+    }
+  }, [newCityRegion]);
+
+  const handleRegionChange = (val: string) => {
+    setNewCityRegion(val);
+    setNewCityName("");
+  };
 
   const handleSaveCity = () => {
     const errors: Record<string, string> = {};
@@ -61,7 +88,6 @@ export default function Dashboard({
       name: newCityName,
       region: newCityRegion,
       reachedDate: newCityReachedDate,
-      workersCount: newCityWorkersCount,
     });
 
     setCityFormErrors({});
@@ -71,7 +97,6 @@ export default function Dashboard({
     setNewCityName("");
     setNewCityRegion("");
     setNewCityReachedDate("");
-    setNewCityWorkersCount(1);
 
     // Show success banner
     setShowSuccessAlert(true);
@@ -409,33 +434,27 @@ export default function Dashboard({
             <h3 className="font-display font-bold text-base text-slate-900 mb-4">Tambah Kota Pelayanan</h3>
             
             <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nama Kota</label>
-                <input 
-                  type="text" 
-                  value={newCityName}
-                  onChange={(e) => setNewCityName(e.target.value)}
-                  placeholder="Contoh: Malang, Jayapura"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
-                />
-                {cityFormErrors.name && (
-                  <span className="text-red-500 text-[10px] mt-1 block font-semibold">{cityFormErrors.name}</span>
-                )}
-              </div>
+              <LocationAutocomplete
+                label="Wilayah / Provinsi"
+                value={newCityRegion}
+                onChange={handleRegionChange}
+                placeholder="Contoh: Jawa Timur, DKI Jakarta"
+                fetchSuggestions={fetchProvinceSuggestions}
+                error={cityFormErrors.region}
+                minChars={3}
+              />
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Wilayah / Provinsi</label>
-                <input 
-                  type="text" 
-                  value={newCityRegion}
-                  onChange={(e) => setNewCityRegion(e.target.value)}
-                  placeholder="Contoh: Jawa Timur, Papua"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
-                />
-                {cityFormErrors.region && (
-                  <span className="text-red-500 text-[10px] mt-1 block font-semibold">{cityFormErrors.region}</span>
-                )}
-              </div>
+              <LocationAutocomplete
+                label="Nama Kota / Kabupaten"
+                value={newCityName}
+                onChange={setNewCityName}
+                placeholder={newCityRegion.trim() ? "Contoh: Kota Surabaya, Kab. Malang" : "Pilih provinsi terlebih dahulu"}
+                fetchSuggestions={fetchCitySuggestions}
+                disabled={!newCityRegion.trim()}
+                disabledHint="Pilih provinsi terlebih dahulu untuk mengaktifkan input kota"
+                error={cityFormErrors.name}
+                minChars={3}
+              />
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tanggal Mulai Dijangkau</label>
@@ -453,17 +472,6 @@ export default function Dashboard({
                 )}
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Jumlah Pekerja</label>
-                <input 
-                  type="number" 
-                  min="0"
-                  placeholder="Contoh: 3"
-                  value={newCityWorkersCount}
-                  onChange={(e) => setNewCityWorkersCount(Number(e.target.value))}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
-                />
-              </div>
             </div>
 
             <div className="flex space-x-2 mt-6">

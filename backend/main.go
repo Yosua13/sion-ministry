@@ -47,8 +47,11 @@ func main() {
 	jobRepo := repository.NewJobRepository(db)
 	moduleRepo := repository.NewModuleRepository(db)
 
+	locationRepo := repository.NewLocationRepository()
+
 	// 4. Initialize Services
-	authService := service.NewAuthService(authRepo, cfg.SessionTTL)
+	invitationMailer := service.NewInvitationMailer(cfg)
+	authService := service.NewAuthService(authRepo, cfg.SessionTTL, cfg.InvitationTTL, invitationMailer)
 	accessService := service.NewAccessService(db)
 	if err := authService.EnsureBootstrapAdmin(cfg.BootstrapAdminEmail, cfg.BootstrapAdminPassword); err != nil {
 		log.Fatalf("Administrator bootstrap failed: %v", err)
@@ -58,7 +61,7 @@ func main() {
 		log.Fatalf("Object storage initialization failed: %v", err)
 	}
 	cityService := service.NewCityService(cityRepo)
-	memberService := service.NewMemberService(memberRepo, cityRepo)
+	memberService := service.NewMemberService(memberRepo, cityRepo, authService)
 	beritaService := service.NewBeritaService(beritaRepo, cityRepo)
 	jurnalService := service.NewJurnalService(jurnalRepo, cityRepo)
 	donationService := service.NewDonationService(donationRepo)
@@ -66,7 +69,8 @@ func main() {
 	jobService := service.NewJobService(jobRepo)
 	moduleService := service.NewModuleService(moduleRepo)
 	aiService := service.NewAIService(cfg)
-	syncService := service.NewSyncService(db, cityRepo, memberRepo, beritaRepo, jurnalRepo, linkRepo)
+	syncService := service.NewSyncService(db)
+	locationService := service.NewLocationService(locationRepo)
 
 	services := &service.Service{
 		Auth:     authService,
@@ -81,6 +85,7 @@ func main() {
 		AI:       aiService,
 		Sync:     syncService,
 		Access:   accessService,
+		Location: locationService,
 	}
 
 	// 5. Initialize Handlers
