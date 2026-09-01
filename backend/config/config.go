@@ -10,33 +10,39 @@ import (
 )
 
 type Config struct {
-	DBHost                 string
-	DBPort                 string
-	DBUser                 string
-	DBPassword             string
-	DBName                 string
-	GeminiAPIKey           string
-	AppPort                string
-	AppEnv                 string
-	AllowedOrigins         []string
-	SessionTTL             time.Duration
-	UploadDir              string
-	BootstrapAdminEmail    string
-	BootstrapAdminPassword string
-	SentryDSN              string
-	S3Endpoint             string
-	S3Region               string
-	S3Bucket               string
-	S3Prefix               string
-	S3UsePathStyle         bool
-	SignedURLTTL           time.Duration
-	InvitationTTL          time.Duration
-	AppPublicURL           string
-	SMTPHost               string
-	SMTPPort               string
-	SMTPUsername           string
-	SMTPPassword           string
-	SMTPFrom               string
+	DBHost                    string
+	DBPort                    string
+	DBUser                    string
+	DBPassword                string
+	DBName                    string
+	GeminiAPIKey              string
+	AppPort                   string
+	AppEnv                    string
+	AllowedOrigins            []string
+	SessionTTL                time.Duration
+	UploadDir                 string
+	BootstrapAdminEmail       string
+	BootstrapAdminPassword    string
+	SentryDSN                 string
+	S3Endpoint                string
+	S3Region                  string
+	S3Bucket                  string
+	S3Prefix                  string
+	S3UsePathStyle            bool
+	SignedURLTTL              time.Duration
+	InvitationTTL             time.Duration
+	AppPublicURL              string
+	SMTPHost                  string
+	SMTPPort                  string
+	SMTPUsername              string
+	SMTPPassword              string
+	SMTPFrom                  string
+	GoogleOAuthClientID       string
+	GoogleOAuthClientSecret   string
+	GoogleOAuthRedirectURL    string
+	GoogleSheetsSpreadsheetID string
+	GoogleSheetsTab           string
+	GoogleTokenEncryptionKey  string
 }
 
 func LoadConfig() (*Config, error) {
@@ -94,36 +100,62 @@ func LoadConfig() (*Config, error) {
 	if appEnv == "production" && !smtpConfigured {
 		return nil, fmt.Errorf("SMTP_HOST and SMTP_FROM must be set in production")
 	}
+	googleClientID := strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_ID"))
+	googleClientSecret := strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"))
+	googleRedirectURL := strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_REDIRECT_URL"))
+	googleSpreadsheetID := strings.TrimSpace(os.Getenv("GOOGLE_SHEETS_SPREADSHEET_ID"))
+	googleTokenKey := strings.TrimSpace(os.Getenv("GOOGLE_TOKEN_ENCRYPTION_KEY"))
+	googleValues := []string{googleClientID, googleClientSecret, googleRedirectURL, googleSpreadsheetID, googleTokenKey}
+	googleConfigured := 0
+	for _, value := range googleValues {
+		if value != "" {
+			googleConfigured++
+		}
+	}
+	if googleConfigured > 0 && googleConfigured != len(googleValues) {
+		return nil, fmt.Errorf("Google Sheets configuration is incomplete")
+	}
 
 	return &Config{
-		DBHost:                 os.Getenv("DB_HOST"),
-		DBPort:                 os.Getenv("DB_PORT"),
-		DBUser:                 os.Getenv("DB_USER"),
-		DBPassword:             os.Getenv("DB_PASSWORD"),
-		DBName:                 os.Getenv("DB_NAME"),
-		GeminiAPIKey:           os.Getenv("GEMINI_API_KEY"),
-		AppPort:                getEnv("PORT", "3000"),
-		AppEnv:                 appEnv,
-		AllowedOrigins:         origins,
-		SessionTTL:             sessionTTL,
-		UploadDir:              getEnv("UPLOAD_DIR", "./uploads"),
-		BootstrapAdminEmail:    strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_EMAIL")),
-		BootstrapAdminPassword: os.Getenv("BOOTSTRAP_ADMIN_PASSWORD"),
-		SentryDSN:              strings.TrimSpace(os.Getenv("SENTRY_DSN")),
-		S3Endpoint:             strings.TrimSpace(os.Getenv("S3_ENDPOINT")),
-		S3Region:               strings.TrimSpace(os.Getenv("S3_REGION")),
-		S3Bucket:               s3Bucket,
-		S3Prefix:               strings.Trim(strings.TrimSpace(getEnv("S3_PREFIX", "uploads")), "/"),
-		S3UsePathStyle:         strings.EqualFold(getEnv("S3_USE_PATH_STYLE", "false"), "true"),
-		SignedURLTTL:           signedURLTTL,
-		InvitationTTL:          invitationTTL,
-		AppPublicURL:           strings.TrimRight(strings.TrimSpace(getEnv("APP_PUBLIC_URL", "http://localhost:5173")), "/"),
-		SMTPHost:               smtpHost,
-		SMTPPort:               getEnv("SMTP_PORT", "587"),
-		SMTPUsername:           smtpUsername,
-		SMTPPassword:           smtpPassword,
-		SMTPFrom:               smtpFrom,
+		DBHost:                    os.Getenv("DB_HOST"),
+		DBPort:                    os.Getenv("DB_PORT"),
+		DBUser:                    os.Getenv("DB_USER"),
+		DBPassword:                os.Getenv("DB_PASSWORD"),
+		DBName:                    os.Getenv("DB_NAME"),
+		GeminiAPIKey:              os.Getenv("GEMINI_API_KEY"),
+		AppPort:                   getEnv("PORT", "3000"),
+		AppEnv:                    appEnv,
+		AllowedOrigins:            origins,
+		SessionTTL:                sessionTTL,
+		UploadDir:                 getEnv("UPLOAD_DIR", "./uploads"),
+		BootstrapAdminEmail:       strings.TrimSpace(os.Getenv("BOOTSTRAP_ADMIN_EMAIL")),
+		BootstrapAdminPassword:    os.Getenv("BOOTSTRAP_ADMIN_PASSWORD"),
+		SentryDSN:                 strings.TrimSpace(os.Getenv("SENTRY_DSN")),
+		S3Endpoint:                strings.TrimSpace(os.Getenv("S3_ENDPOINT")),
+		S3Region:                  strings.TrimSpace(os.Getenv("S3_REGION")),
+		S3Bucket:                  s3Bucket,
+		S3Prefix:                  strings.Trim(strings.TrimSpace(getEnv("S3_PREFIX", "uploads")), "/"),
+		S3UsePathStyle:            strings.EqualFold(getEnv("S3_USE_PATH_STYLE", "false"), "true"),
+		SignedURLTTL:              signedURLTTL,
+		InvitationTTL:             invitationTTL,
+		AppPublicURL:              strings.TrimRight(strings.TrimSpace(getEnv("APP_PUBLIC_URL", "http://localhost:5173")), "/"),
+		SMTPHost:                  smtpHost,
+		SMTPPort:                  getEnv("SMTP_PORT", "587"),
+		SMTPUsername:              smtpUsername,
+		SMTPPassword:              smtpPassword,
+		SMTPFrom:                  smtpFrom,
+		GoogleOAuthClientID:       googleClientID,
+		GoogleOAuthClientSecret:   googleClientSecret,
+		GoogleOAuthRedirectURL:    googleRedirectURL,
+		GoogleSheetsSpreadsheetID: googleSpreadsheetID,
+		GoogleSheetsTab:           strings.TrimSpace(getEnv("GOOGLE_SHEETS_TAB", "Registrasi OH 2026")),
+		GoogleTokenEncryptionKey:  googleTokenKey,
 	}, nil
+}
+
+func (c *Config) GoogleSheetsEnabled() bool {
+	return c != nil && c.GoogleOAuthClientID != "" && c.GoogleOAuthClientSecret != "" &&
+		c.GoogleOAuthRedirectURL != "" && c.GoogleSheetsSpreadsheetID != "" && c.GoogleTokenEncryptionKey != ""
 }
 
 func getEnv(key, fallback string) string {
