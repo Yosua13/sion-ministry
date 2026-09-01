@@ -58,7 +58,6 @@ type GoogleSheetsCredential struct {
 	UpdatedAt             time.Time `json:"-"`
 }
 
-
 type AuthResponse struct {
 	User      User      `json:"user"`
 	ExpiresAt time.Time `json:"expiresAt"`
