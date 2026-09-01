@@ -538,6 +538,13 @@ export default function UserManagement() {
 
           <div className="flex flex-wrap items-center gap-3">
             <button
+              onClick={() => window.location.assign("/api/integrations/google/authorize")}
+              className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-700 shadow-sm transition hover:bg-emerald-100 hover:text-emerald-800"
+            >
+              <Globe className="h-4 w-4" />
+              Hubungkan Google Sheet
+            </button>
+            <button
               onClick={loadAdminData}
               disabled={isLoading}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50"

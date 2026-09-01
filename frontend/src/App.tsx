@@ -16,9 +16,17 @@ import Pekerjaan from "./components/Pekerjaan";
 import UserManagement from "./components/UserManagement";
 import RoleHome from "./components/RoleHome";
 import Toast from "./components/Toast";
+import PublicRegistration from "./components/PublicRegistration";
 import { Wifi, WifiOff, Bell, Menu, X, RefreshCw, LogOut } from "lucide-react";
 
 export default function App() {
+  if (window.location.pathname === "/register") {
+    return <PublicRegistration />;
+  }
+  return <AuthenticatedApp />;
+}
+
+function AuthenticatedApp() {
   // Initialize Database on App load
   useEffect(() => {
     SionDatabase.init();
