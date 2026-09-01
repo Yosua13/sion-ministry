@@ -37,8 +37,11 @@ func SetupRouter(app *fiber.App, handlers *Handlers, cfg *config.Config) {
 	authLimiter := limiter.New(limiter.Config{Max: 5, Expiration: 15 * time.Minute, LimitReached: RateLimitError})
 	aiLimiter := limiter.New(limiter.Config{Max: 20, Expiration: time.Minute, LimitReached: RateLimitError})
 	uploadLimiter := limiter.New(limiter.Config{Max: 10, Expiration: time.Minute, LimitReached: RateLimitError})
+	registrationLimiter := limiter.New(limiter.Config{Max: 10, Expiration: 10 * time.Minute, LimitReached: RateLimitError})
 	api.Post("/auth/login", authLimiter, handlers.Login)
 	api.Post("/auth/activate", authLimiter, handlers.Activate)
+	api.Post("/public/registrations", registrationLimiter, handlers.CreatePublicRegistration)
+	api.Get("/integrations/google/callback", handlers.GoogleSheetsCallback)
 
 	protected := api.Group("", handlers.RequireAuth)
 	protected.Get("/auth/me", handlers.Me)
@@ -55,6 +58,10 @@ func SetupRouter(app *fiber.App, handlers *Handlers, cfg *config.Config) {
 	protected.Get("/auth/audit-logs", handlers.RequirePermission("audit.read"), handlers.GetAuditLogs)
 	protected.Get("/auth/sessions", handlers.GetSessions)
 	protected.Delete("/auth/sessions/:id", handlers.RevokeSession)
+	// Role assignments live in user_roles. RequirePermission resolves that source
+	// of truth, while the legacy User.Role field is intentionally not persisted.
+	protected.Get("/integrations/google/status", handlers.RequirePermission("assignment.manage"), handlers.GoogleSheetsStatus)
+	protected.Get("/integrations/google/authorize", handlers.RequirePermission("assignment.manage"), handlers.GoogleSheetsAuthorize)
 
 	// AI Assistant
 	protected.Post("/gemini/assistant", handlers.RequirePermission("ai.use"), aiLimiter, handlers.AiAssistant)

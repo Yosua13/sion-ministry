@@ -46,6 +46,7 @@ func main() {
 	linkRepo := repository.NewLinkRepository(db)
 	jobRepo := repository.NewJobRepository(db)
 	moduleRepo := repository.NewModuleRepository(db)
+	googleSheetsRepo := repository.NewGoogleSheetsRepository(db)
 
 	locationRepo := repository.NewLocationRepository()
 
@@ -71,21 +72,26 @@ func main() {
 	aiService := service.NewAIService(cfg)
 	syncService := service.NewSyncService(db)
 	locationService := service.NewLocationService(locationRepo)
+	registrationService, err := service.NewGoogleSheetsService(cfg, googleSheetsRepo)
+	if err != nil {
+		log.Fatalf("Google Sheets configuration failed: %v", err)
+	}
 
 	services := &service.Service{
-		Auth:     authService,
-		City:     cityService,
-		Member:   memberService,
-		Berita:   beritaService,
-		Jurnal:   jurnalService,
-		Donation: donationService,
-		Link:     linkService,
-		Job:      jobService,
-		Module:   moduleService,
-		AI:       aiService,
-		Sync:     syncService,
-		Access:   accessService,
-		Location: locationService,
+		Auth:         authService,
+		City:         cityService,
+		Member:       memberService,
+		Berita:       beritaService,
+		Jurnal:       jurnalService,
+		Donation:     donationService,
+		Link:         linkService,
+		Job:          jobService,
+		Module:       moduleService,
+		AI:           aiService,
+		Sync:         syncService,
+		Access:       accessService,
+		Location:     locationService,
+		Registration: registrationService,
 	}
 
 	// 5. Initialize Handlers

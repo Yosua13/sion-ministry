@@ -46,6 +46,8 @@ const (
 	developmentSessionCookieName = "sion_session"
 )
 
+const googleOAuthStateCookieName = "sion_google_oauth_state"
+
 func secureCookiesEnabled() bool { return strings.EqualFold(os.Getenv("APP_ENV"), "production") }
 
 // __Host- cookies are accepted only when Secure is set. Use that stricter name in
@@ -70,6 +72,14 @@ func setSessionCookie(c *fiber.Ctx, token string, expiresAt time.Time) {
 func clearSessionCookie(c *fiber.Ctx) {
 	c.Cookie(&fiber.Cookie{Name: sessionCookieName(), Value: "", Path: "/", HTTPOnly: true, Secure: secureCookiesEnabled(), SameSite: "Strict", Expires: time.Unix(1, 0)})
 	c.Cookie(&fiber.Cookie{Name: csrfCookieName, Value: "", Path: "/", HTTPOnly: false, Secure: secureCookiesEnabled(), SameSite: "Strict", Expires: time.Unix(1, 0)})
+}
+
+func setGoogleOAuthStateCookie(c *fiber.Ctx, state string) {
+	c.Cookie(&fiber.Cookie{Name: googleOAuthStateCookieName, Value: state, Path: "/api/integrations/google", HTTPOnly: true, Secure: secureCookiesEnabled(), SameSite: "Lax", Expires: time.Now().Add(10 * time.Minute)})
+}
+
+func clearGoogleOAuthStateCookie(c *fiber.Ctx) {
+	c.Cookie(&fiber.Cookie{Name: googleOAuthStateCookieName, Value: "", Path: "/api/integrations/google", HTTPOnly: true, Secure: secureCookiesEnabled(), SameSite: "Lax", Expires: time.Unix(1, 0)})
 }
 
 func localStringPointer(value string) *string {
