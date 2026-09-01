@@ -50,6 +50,8 @@ func main() {
 
 	locationRepo := repository.NewLocationRepository()
 
+	locationRepo := repository.NewLocationRepository()
+
 	// 4. Initialize Services
 	invitationMailer := service.NewInvitationMailer(cfg)
 	authService := service.NewAuthService(authRepo, cfg.SessionTTL, cfg.InvitationTTL, invitationMailer)
