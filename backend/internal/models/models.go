@@ -58,7 +58,6 @@ type GoogleSheetsCredential struct {
 	UpdatedAt             time.Time `json:"-"`
 }
 
-func (AuthSession) TableName() string { return "auth_sessions" }
 
 type AuthResponse struct {
 	User      User      `json:"user"`
