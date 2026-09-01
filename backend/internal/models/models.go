@@ -50,6 +50,14 @@ type AuthSession struct {
 
 func (AuthSession) TableName() string { return "auth_sessions" }
 
+type GoogleSheetsCredential struct {
+	ID                    int       `gorm:"primaryKey" json:"-"`
+	EncryptedRefreshToken string    `json:"-"`
+	ConnectedBy           *string   `json:"-"`
+	ConnectedAt           time.Time `json:"-"`
+	UpdatedAt             time.Time `json:"-"`
+}
+
 type AuthResponse struct {
 	User      User      `json:"user"`
 	ExpiresAt time.Time `json:"expiresAt"`
