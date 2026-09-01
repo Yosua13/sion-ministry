@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+
 	"backend/internal/models"
 )
 
@@ -71,6 +73,13 @@ type SyncService interface {
 	Sync(payload *models.SyncPayload, actorID string, cityIDs []string, allCities bool) error
 }
 
+type RegistrationService interface {
+	SubmitRegistration(ctx context.Context, input PublicRegistrationInput) error
+	AuthorizationURL(state string) (string, error)
+	CompleteAuthorization(ctx context.Context, code, actorID string) error
+	Status() (configured bool, connected bool)
+}
+
 type AuthService interface {
 	Login(email string, password string, device ...string) (*models.AuthResponse, string, error)
 	Activate(rawToken string, password string, device ...string) (*models.AuthResponse, string, error)
@@ -109,17 +118,18 @@ type AccessService interface {
 }
 
 type Service struct {
-	Auth     AuthService
-	City     CityService
-	Member   MemberService
-	Berita   BeritaService
-	Jurnal   JurnalService
-	Donation DonationService
-	Link     LinkService
-	Job      JobService
-	Module   ModuleService
-	AI       AIService
-	Sync     SyncService
-	Access   AccessService
-	Location LocationService
+	Auth         AuthService
+	City         CityService
+	Member       MemberService
+	Berita       BeritaService
+	Jurnal       JurnalService
+	Donation     DonationService
+	Link         LinkService
+	Job          JobService
+	Module       ModuleService
+	AI           AIService
+	Sync         SyncService
+	Access       AccessService
+	Location     LocationService
+	Registration RegistrationService
 }
