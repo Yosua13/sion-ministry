@@ -16,6 +16,35 @@ import (
 // message is being delivered.
 type InvitationMailer interface {
 	SendActivation(recipientName, recipientEmail, rawToken string) error
+	SendAccountApproved(recipientName, recipientEmail string) error
+}
+
+func (m *invitationMailer) SendAccountApproved(recipientName, recipientEmail string) error {
+	noSMTPConfiguration := m.smtpHost == "" && m.smtpUsername == "" && m.smtpPassword == "" && m.smtpFrom == ""
+	if noSMTPConfiguration {
+		if m.production {
+			return fmt.Errorf("SMTP_HOST and SMTP_FROM must be configured")
+		}
+		log.Printf("DEVELOPMENT approval email for %s", recipientEmail)
+		return nil
+	}
+	if m.smtpHost == "" || m.smtpFrom == "" {
+		return fmt.Errorf("SMTP configuration is incomplete: SMTP_HOST and SMTP_FROM must be set together")
+	}
+	if (m.smtpUsername == "") != (m.smtpPassword == "") {
+		return fmt.Errorf("SMTP authentication is incomplete: username and password must be set together")
+	}
+	sender, err := mail.ParseAddress(m.smtpFrom)
+	if err != nil || sender.Address == "" {
+		return fmt.Errorf("SMTP_FROM must be a valid email address or display-name address")
+	}
+	plainBody := "Halo " + recipientName + ",\r\n\r\nAkun Sion Ministry Anda telah diaktifkan oleh admin. Anda sekarang dapat masuk menggunakan akun Google yang terdaftar.\r\n\r\nSalam hangat,\r\nTim Sion Ministry"
+	message := strings.Join([]string{"To: " + recipientEmail, "From: " + m.smtpFrom, "Subject: Akun Sion Ministry Anda telah aktif", "MIME-Version: 1.0", "Content-Type: text/plain; charset=UTF-8", "", plainBody}, "\r\n")
+	var auth smtp.Auth
+	if m.smtpUsername != "" {
+		auth = smtp.PlainAuth("", m.smtpUsername, m.smtpPassword, m.smtpHost)
+	}
+	return smtp.SendMail(m.smtpHost+":"+m.smtpPort, auth, sender.Address, []string{recipientEmail}, []byte(message))
 }
 
 type invitationMailer struct {

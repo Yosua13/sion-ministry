@@ -120,7 +120,7 @@ func (s *authService) InviteMember(member *models.Member, actorID string) error 
 	if role == "" {
 		role = "jemaat"
 	}
-	if role != "jemaat" && role != "pekerja" && role != "mentor" && role != "auditor" {
+	if role != "jemaat" && role != "pekerja" && role != "admin" {
 		return errors.New("role undangan tidak valid")
 	}
 	cityID := strings.TrimSpace(member.CityID)
@@ -219,7 +219,7 @@ func (s *authService) GetUserByToken(token string) (*models.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	if user.Status != "active" {
+	if user.Status != "active" && user.Status != "pending" {
 		return nil, errors.New("akun tidak aktif")
 	}
 	return user, nil
@@ -286,6 +286,123 @@ func (s *authService) EnsureBootstrapAdmin(email, password string) error {
 }
 
 func (s *authService) GetUsers() ([]models.User, error) { return s.repo.GetUsers() }
+
+func (s *authService) LoginWithGoogle(identity models.GoogleIdentity, device ...string) (*models.AuthResponse, string, error) {
+	identity.Subject = strings.TrimSpace(identity.Subject)
+	identity.Email = strings.ToLower(strings.TrimSpace(identity.Email))
+	identity.Name = strings.TrimSpace(identity.Name)
+	if identity.Subject == "" || identity.Email == "" {
+		return nil, "", errors.New("identitas Google tidak lengkap")
+	}
+	user, err := s.repo.GetUserByGoogleSubject(identity.Subject)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		user, err = s.repo.GetUserByEmail(identity.Email)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			now := time.Now().UTC()
+			user = &models.User{ID: uuid.NewString(), Name: identity.Name, Email: identity.Email, GoogleSubject: identity.Subject, Status: "pending", IsMember: false, ProfileVersion: 1, CreatedAt: now, UpdatedAt: now}
+			audit := newAuthAudit(user.ID, "account.requested", "user", user.ID, "self", user.ID, "success", map[string]any{"source": "google_sso"})
+			if err := s.repo.CreateGooglePendingUser(user, audit); err != nil {
+				return nil, "", err
+			}
+		} else if err != nil {
+			return nil, "", err
+		} else {
+			if user.GoogleSubject != "" && user.GoogleSubject != identity.Subject {
+				return nil, "", errors.New("email ini sudah terhubung ke akun Google lain")
+			}
+			user.GoogleSubject = identity.Subject
+		}
+	} else if err != nil {
+		return nil, "", err
+	}
+	if user.GoogleSubject != identity.Subject {
+		user.GoogleSubject = identity.Subject
+	}
+	if identity.Name != "" {
+		user.Name = identity.Name
+	}
+	user.Email = identity.Email
+	user.UpdatedAt = time.Now().UTC()
+	if err := s.repo.UpdateUser(user); err != nil {
+		return nil, "", err
+	}
+	if user.Status == "disabled" {
+		return nil, "", errors.New("akun telah dinonaktifkan")
+	}
+	token, err := generateToken()
+	if err != nil {
+		return nil, "", err
+	}
+	now := time.Now().UTC()
+	session := &models.AuthSession{ID: "ses-" + uuid.NewString(), TokenHash: hashSessionToken(token), UserID: user.ID, ExpiresAt: now.Add(time.Hour), CreatedAt: now, LastSeenAt: &now}
+	if len(device) > 0 {
+		session.DeviceName = strings.TrimSpace(device[0])
+	}
+	if len(device) > 1 {
+		session.UserAgent = strings.TrimSpace(device[1])
+	}
+	if len(device) > 2 {
+		session.IPAddress = strings.TrimSpace(device[2])
+	}
+	if err := s.repo.CreateSessionWithAudit(session, newAuthAudit(user.ID, "session.created", "auth_session", session.ID, "self", user.ID, "success", map[string]any{"source": "google_sso"})); err != nil {
+		return nil, "", err
+	}
+	return &models.AuthResponse{User: *user, ExpiresAt: session.ExpiresAt}, token, nil
+}
+
+func (s *authService) ApproveGoogleUser(userID, actorID string) (*models.User, error) {
+	user, err := s.repo.ApproveGoogleUser(strings.TrimSpace(userID), actorID, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	if s.mailer == nil {
+		return nil, errors.New("layanan email persetujuan tidak tersedia")
+	}
+	if err := s.mailer.SendAccountApproved(user.Name, user.Email); err != nil {
+		return nil, fmt.Errorf("akun telah diaktifkan, tetapi email belum terkirim: %w", err)
+	}
+	return user, nil
+}
+
+func (s *authService) UpdateOwnProfile(userID string, input ProfileInput) (*models.User, error) {
+	input.CityID = strings.TrimSpace(input.CityID)
+	input.Phone = strings.Join(strings.Fields(strings.TrimSpace(input.Phone)), " ")
+	input.Campus = strings.Join(strings.Fields(strings.TrimSpace(input.Campus)), " ")
+	input.Cohort = strings.Join(strings.Fields(strings.TrimSpace(input.Cohort)), " ")
+	input.Major = strings.Join(strings.Fields(strings.TrimSpace(input.Major)), " ")
+	if input.CityID == "" || input.Phone == "" {
+		return nil, errors.New("kota dan nomor HP wajib diisi")
+	}
+	if len(input.Phone) > 32 || len(input.Campus) > 120 || len(input.Cohort) > 20 || len(input.Major) > 120 {
+		return nil, errors.New("salah satu informasi profil terlalu panjang")
+	}
+	return s.repo.UpdateOwnProfile(userID, map[string]any{"city_id": input.CityID, "phone_e164": input.Phone, "campus": input.Campus, "cohort": input.Cohort, "major": input.Major, "is_member": true, "profile_version": gorm.Expr("profile_version + 1"), "updated_at": time.Now().UTC()})
+}
+
+func (s *authService) RequestRoleChange(userID, requestedRole, reason string) (*models.RoleChangeRequest, error) {
+	requestedRole = strings.ToLower(strings.TrimSpace(requestedRole))
+	reason = strings.TrimSpace(reason)
+	if requestedRole != "pekerja" && requestedRole != "admin" {
+		return nil, errors.New("role yang dapat diminta hanya Pekerja atau Admin")
+	}
+	now := time.Now().UTC()
+	request := &models.RoleChangeRequest{ID: "rcr-" + uuid.NewString(), UserID: userID, RequestedRole: requestedRole, Reason: reason, Status: "pending", CreatedAt: now, UpdatedAt: now}
+	if err := s.repo.CreateRoleChangeRequest(request); err != nil {
+		return nil, errors.New("masih ada permintaan perubahan role yang menunggu persetujuan")
+	}
+	return request, nil
+}
+
+func (s *authService) GetRoleChangeRequests(pendingOnly bool) ([]models.RoleChangeRequest, error) {
+	return s.repo.GetRoleChangeRequests(pendingOnly)
+}
+func (s *authService) ReviewRoleChangeRequest(id, actorID, decision, note string) (*models.RoleChangeRequest, error) {
+	decision = strings.ToLower(strings.TrimSpace(decision))
+	if decision != "approved" && decision != "rejected" {
+		return nil, errors.New("keputusan harus approved atau rejected")
+	}
+	return s.repo.ReviewRoleChangeRequest(strings.TrimSpace(id), actorID, decision, strings.TrimSpace(note), time.Now().UTC())
+}
 
 func generateToken() (string, error) {
 	bytes := make([]byte, 32)

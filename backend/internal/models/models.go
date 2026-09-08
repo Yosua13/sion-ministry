@@ -10,10 +10,14 @@ type User struct {
 	ID                string     `gorm:"primaryKey" json:"id"`
 	Name              string     `gorm:"column:full_name" json:"name"`
 	Email             string     `json:"email"`
+	GoogleSubject     string     `json:"-"`
 	PasswordHash      *string    `json:"-"`
 	CityID            *string    `json:"cityId,omitempty"`
 	CityName          string     `gorm:"column:city_name;->" json:"cityName,omitempty"`
 	Phone             string     `gorm:"column:phone_e164" json:"phone,omitempty"`
+	Campus            string     `json:"campus,omitempty"`
+	Cohort            string     `json:"cohort,omitempty"`
+	Major             string     `json:"major,omitempty"`
 	DiscipleshipStage string     `json:"discipleshipStage,omitempty"`
 	MentorUserID      *string    `json:"mentorUserId,omitempty"`
 	MentorName        string     `json:"mentorName,omitempty"`
@@ -61,6 +65,25 @@ type GoogleSheetsCredential struct {
 type AuthResponse struct {
 	User      User      `json:"user"`
 	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+type GoogleIdentity struct {
+	Subject string
+	Email   string
+	Name    string
+}
+
+type RoleChangeRequest struct {
+	ID            string     `gorm:"primaryKey" json:"id"`
+	UserID        string     `json:"userId"`
+	RequestedRole string     `json:"requestedRole"`
+	Reason        string     `json:"reason,omitempty"`
+	Status        string     `json:"status"`
+	ReviewedBy    *string    `json:"reviewedBy,omitempty"`
+	ReviewedAt    *time.Time `json:"reviewedAt,omitempty"`
+	ReviewNote    string     `json:"reviewNote,omitempty"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	UpdatedAt     time.Time  `json:"updatedAt"`
 }
 
 type AccountInvitation struct {

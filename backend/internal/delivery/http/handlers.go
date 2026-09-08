@@ -21,8 +21,13 @@ import (
 )
 
 type Handlers struct {
-	services    *service.Service
-	objectStore objectstore.Presigner
+	services     *service.Service
+	objectStore  objectstore.Presigner
+	appPublicURL string
+}
+
+func (h *Handlers) SetAppPublicURL(value string) {
+	h.appPublicURL = strings.TrimRight(strings.TrimSpace(value), "/")
 }
 
 func NewHandlers(services *service.Service, objectStores ...objectstore.Presigner) *Handlers {
@@ -47,6 +52,7 @@ const (
 )
 
 const googleOAuthStateCookieName = "sion_google_oauth_state"
+const googleLoginStateCookieName = "sion_google_login_state"
 
 func secureCookiesEnabled() bool { return strings.EqualFold(os.Getenv("APP_ENV"), "production") }
 
@@ -76,6 +82,30 @@ func clearSessionCookie(c *fiber.Ctx) {
 
 func setGoogleOAuthStateCookie(c *fiber.Ctx, state string) {
 	c.Cookie(&fiber.Cookie{Name: googleOAuthStateCookieName, Value: state, Path: "/api/integrations/google", HTTPOnly: true, Secure: secureCookiesEnabled(), SameSite: "Lax", Expires: time.Now().Add(10 * time.Minute)})
+}
+
+func (h *Handlers) PublicCities(c *fiber.Ctx) error {
+	cities, err := h.services.City.GetAll()
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusInternalServerError, "cities_lookup_failed", "Gagal mengambil daftar kota.")
+	}
+	return c.JSON(cities)
+}
+
+func setGoogleLoginStateCookie(c *fiber.Ctx, state string) {
+	c.Cookie(&fiber.Cookie{Name: googleLoginStateCookieName, Value: state, Path: "/api/auth/google", HTTPOnly: true, Secure: secureCookiesEnabled(), SameSite: "Lax", Expires: time.Now().Add(10 * time.Minute)})
+}
+
+func clearGoogleLoginStateCookie(c *fiber.Ctx) {
+	c.Cookie(&fiber.Cookie{Name: googleLoginStateCookieName, Value: "", Path: "/api/auth/google", HTTPOnly: true, Secure: secureCookiesEnabled(), SameSite: "Lax", Expires: time.Unix(1, 0)})
+}
+
+func generateOAuthState() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
 }
 
 func clearGoogleOAuthStateCookie(c *fiber.Ctx) {
@@ -133,6 +163,56 @@ func (h *Handlers) Login(c *fiber.Ctx) error {
 	return c.JSON(session)
 }
 
+func (h *Handlers) GoogleLogin(c *fiber.Ctx) error {
+	if h.services.GoogleLogin == nil || !h.services.GoogleLogin.Enabled() {
+		return WriteAPIError(c, fiber.StatusServiceUnavailable, "google_login_unavailable", "Google login belum dikonfigurasi.")
+	}
+	state, err := generateOAuthState()
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusInternalServerError, "oauth_state_failed", "Gagal memulai Google login.")
+	}
+	url, err := h.services.GoogleLogin.AuthorizationURL(state)
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusServiceUnavailable, "google_login_unavailable", err.Error())
+	}
+	setGoogleLoginStateCookie(c, state)
+	return c.Redirect(url, fiber.StatusFound)
+}
+
+func (h *Handlers) GoogleLoginCallback(c *fiber.Ctx) error {
+	redirect := h.appPublicURL
+	if redirect == "" {
+		redirect = "/"
+	}
+	state := c.Query("state")
+	if state == "" || state != c.Cookies(googleLoginStateCookieName) {
+		clearGoogleLoginStateCookie(c)
+		return c.Redirect(redirect+"/?auth=error", fiber.StatusFound)
+	}
+	clearGoogleLoginStateCookie(c)
+	if c.Query("error") != "" {
+		return c.Redirect(redirect+"/?auth=cancelled", fiber.StatusFound)
+	}
+	deviceName := strings.TrimSpace(c.Get("X-Device-Name"))
+	if deviceName == "" {
+		deviceName = "Google OAuth Browser"
+	}
+	session, token, err := h.services.GoogleLogin.CompleteAuthorization(c.Context(), c.Query("code"), deviceName, c.Get("User-Agent"), c.IP())
+	if err != nil {
+		return c.Redirect(redirect+"/?auth=error", fiber.StatusFound)
+	}
+	if access, resolveErr := h.services.Access.Resolve(&session.User); resolveErr == nil {
+		session.User.Role = primaryFrontendRole(access)
+	} else {
+		session.User.Role = "jemaat"
+	}
+	setSessionCookie(c, token, session.ExpiresAt)
+	if session.User.Status == "pending" {
+		return c.Redirect(redirect+"/?auth=pending", fiber.StatusFound)
+	}
+	return c.Redirect(redirect+"/dashboard", fiber.StatusFound)
+}
+
 func (h *Handlers) Activate(c *fiber.Ctx) error {
 	var req struct {
 		Token    string `json:"token"`
@@ -164,8 +244,89 @@ func (h *Handlers) Me(c *fiber.Ctx) error {
 	}
 	if access, resolveErr := h.services.Access.Resolve(user); resolveErr == nil {
 		user.Role = primaryFrontendRole(access)
+	} else {
+		user.Role = "jemaat"
 	}
 	return c.JSON(user)
+}
+
+func (h *Handlers) UpdateOwnProfile(c *fiber.Ctx) error {
+	user, _ := c.Locals("user").(*models.User)
+	if user == nil {
+		return WriteAPIError(c, fiber.StatusUnauthorized, "missing_session", "Sesi tidak ditemukan.")
+	}
+	var input service.ProfileInput
+	if err := c.BodyParser(&input); err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Data profil tidak valid.")
+	}
+	updated, err := h.services.Auth.UpdateOwnProfile(user.ID, input)
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "profile_update_failed", err.Error())
+	}
+	if access, resolveErr := h.services.Access.Resolve(updated); resolveErr == nil {
+		updated.Role = primaryFrontendRole(access)
+	} else {
+		updated.Role = "jemaat"
+	}
+	return c.JSON(updated)
+}
+
+func (h *Handlers) ApproveGoogleUser(c *fiber.Ctx) error {
+	actor, _ := c.Locals("user").(*models.User)
+	if actor == nil {
+		return WriteAPIError(c, fiber.StatusUnauthorized, "missing_session", "Sesi tidak ditemukan.")
+	}
+	user, err := h.services.Auth.ApproveGoogleUser(c.Params("id"), actor.ID)
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "account_approval_failed", err.Error())
+	}
+	return c.JSON(user)
+}
+
+func (h *Handlers) CreateRoleChangeRequest(c *fiber.Ctx) error {
+	user, _ := c.Locals("user").(*models.User)
+	if user == nil {
+		return WriteAPIError(c, fiber.StatusUnauthorized, "missing_session", "Sesi tidak ditemukan.")
+	}
+	var input struct {
+		RequestedRole string `json:"requestedRole"`
+		Reason        string `json:"reason"`
+	}
+	if err := c.BodyParser(&input); err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Permintaan role tidak valid.")
+	}
+	request, err := h.services.Auth.RequestRoleChange(user.ID, input.RequestedRole, input.Reason)
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "role_request_failed", err.Error())
+	}
+	return c.Status(fiber.StatusCreated).JSON(request)
+}
+
+func (h *Handlers) GetRoleChangeRequests(c *fiber.Ctx) error {
+	requests, err := h.services.Auth.GetRoleChangeRequests(c.Query("status", "pending") == "pending")
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusInternalServerError, "role_requests_lookup_failed", "Gagal mengambil permintaan role.")
+	}
+	return c.JSON(requests)
+}
+
+func (h *Handlers) ReviewRoleChangeRequest(c *fiber.Ctx) error {
+	actor, _ := c.Locals("user").(*models.User)
+	if actor == nil {
+		return WriteAPIError(c, fiber.StatusUnauthorized, "missing_session", "Sesi tidak ditemukan.")
+	}
+	var input struct {
+		Decision string `json:"decision"`
+		Note     string `json:"note"`
+	}
+	if err := c.BodyParser(&input); err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "invalid_request", "Keputusan role tidak valid.")
+	}
+	request, err := h.services.Auth.ReviewRoleChangeRequest(c.Params("id"), actor.ID, input.Decision, input.Note)
+	if err != nil {
+		return WriteAPIError(c, fiber.StatusBadRequest, "role_review_failed", err.Error())
+	}
+	return c.JSON(request)
 }
 
 func primaryFrontendRole(access *models.AccessContext) string {
@@ -175,7 +336,7 @@ func primaryFrontendRole(access *models.AccessContext) string {
 	if containsRole(access.Roles, "admin") {
 		return "admin"
 	}
-	if containsRole(access.Roles, "pekerja") || containsRole(access.Roles, "mentor") {
+	if containsRole(access.Roles, "pekerja") {
 		return "pekerja"
 	}
 	return "jemaat"
