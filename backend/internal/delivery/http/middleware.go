@@ -31,7 +31,7 @@ func CSRFProtection(allowedOrigins []string) fiber.Handler {
 		if origin != "" && !allowed[origin] {
 			return WriteAPIError(c, fiber.StatusForbidden, "csrf_forbidden", "Permintaan tidak dapat diverifikasi.")
 		}
-		// Login and activation do not have a session or CSRF cookie yet, but an
+		// Google OAuth entry points do not have a session or CSRF cookie yet, but an
 		// explicit browser Origin is still constrained to the allowlist above.
 		if c.Path() == "/api/auth/login" || c.Path() == "/api/auth/activate" || c.Cookies(sessionCookieName()) == "" {
 			return c.Next()

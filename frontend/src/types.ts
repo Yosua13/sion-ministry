@@ -23,9 +23,9 @@ export interface LocationCity {
   provinceName: string;
 }
 
-export type AuthRole = "admin" | "pekerja" | "mentor" | "jemaat" | "content_publisher" | "auditor" | "donation_verifier";
+export type AuthRole = "admin" | "pekerja" | "jemaat";
 
-export type AuthStatus = "active" | "invited" | "disabled";
+export type AuthStatus = "active" | "pending" | "disabled";
 
 export interface AuthUser {
   id: string;
@@ -37,6 +37,11 @@ export interface AuthUser {
   cityName?: string;
   createdAt: string;
   activatedAt?: string;
+  phone?: string;
+  campus?: string;
+  cohort?: string;
+  major?: string;
+  mentorName?: string;
 }
 
 export interface AuthSession {
@@ -69,6 +74,18 @@ export interface AccessContext {
   cityIds: string[];
   allCities: boolean;
   assignments: RoleAssignment[];
+}
+
+export interface RoleChangeRequest {
+  id: string;
+  userId: string;
+  requestedRole: AuthRole;
+  reason?: string;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  reviewedBy?: string;
+  reviewedAt?: string;
+  reviewNote?: string;
+  createdAt: string;
 }
 
 export interface ScopeOption {

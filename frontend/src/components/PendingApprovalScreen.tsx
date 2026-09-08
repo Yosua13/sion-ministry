@@ -1,0 +1,7 @@
+import React from "react";
+import { Clock3, LogOut, ShieldCheck } from "lucide-react";
+import { AuthSession } from "../types";
+
+export default function PendingApprovalScreen({ session, onLogout }: { session: AuthSession; onLogout: () => void }) {
+  return <main className="grid min-h-screen place-items-center bg-slate-100 p-4"><section className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl"><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-emerald-50 text-emerald-600"><ShieldCheck className="h-7 w-7" /></div><p className="mt-6 text-xs font-bold uppercase tracking-widest text-red-600">Google SSO berhasil</p><h1 className="mt-2 text-2xl font-bold text-slate-900">Halo, {session.user.name}</h1><p className="mt-3 text-sm leading-6 text-slate-600">Akun Google Anda telah terdaftar dan sedang menunggu konfirmasi dari admin Sion Ministry.</p><div className="mt-6 flex items-start gap-3 rounded-2xl bg-amber-50 p-4 text-left text-sm text-amber-900"><Clock3 className="mt-0.5 h-5 w-5 shrink-0" /><p>Setelah admin mengaktifkan akun, Anda akan menerima email pemberitahuan. Silakan masuk kembali dengan akun Google yang sama untuk melanjutkan.</p></div><p className="mt-5 text-xs text-slate-500">Email terdaftar: {session.user.email}</p><button type="button" onClick={onLogout} className="mt-6 inline-flex items-center gap-2 rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50"><LogOut className="h-4 w-4" />Keluar</button></section></main>;
+}

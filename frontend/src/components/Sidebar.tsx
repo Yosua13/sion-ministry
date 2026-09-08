@@ -13,7 +13,8 @@ import {
   RefreshCw,
   Briefcase,
   ShieldCheck,
-  Home
+  Home,
+  UserRound,
 } from "lucide-react";
 import { SyncState } from "../types";
 import { AuthUser } from "../types";
@@ -55,6 +56,7 @@ export default function Sidebar({
       items: [
         { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin"] },
         { id: "home", label: currentUser.role === "pekerja" ? "Beranda Pekerja" : "Beranda Jemaat", icon: Home, roles: ["pekerja", "jemaat"] },
+        { id: "profile", label: "Profil Saya", icon: UserRound, roles: ["admin", "pekerja", "jemaat"] },
       ]
     },
     {

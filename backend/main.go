@@ -53,6 +53,7 @@ func main() {
 	// 4. Initialize Services
 	invitationMailer := service.NewInvitationMailer(cfg)
 	authService := service.NewAuthService(authRepo, cfg.SessionTTL, cfg.InvitationTTL, invitationMailer)
+	googleLoginService := service.NewGoogleLoginService(cfg, authService)
 	accessService := service.NewAccessService(db)
 	if err := authService.EnsureBootstrapAdmin(cfg.BootstrapAdminEmail, cfg.BootstrapAdminPassword); err != nil {
 		log.Fatalf("Administrator bootstrap failed: %v", err)
@@ -92,10 +93,12 @@ func main() {
 		Access:       accessService,
 		Location:     locationService,
 		Registration: registrationService,
+		GoogleLogin:  googleLoginService,
 	}
 
 	// 5. Initialize Handlers
 	handlers := delivery.NewHandlers(services, storage)
+	handlers.SetAppPublicURL(cfg.AppPublicURL)
 
 	// 6. Setup Fiber Application
 	app := fiber.New(fiber.Config{

@@ -91,6 +91,26 @@ type AuthService interface {
 	LogoutAll(userID, actorID string) error
 	EnsureBootstrapAdmin(email string, password string) error
 	GetUsers() ([]models.User, error)
+	LoginWithGoogle(identity models.GoogleIdentity, device ...string) (*models.AuthResponse, string, error)
+	ApproveGoogleUser(userID, actorID string) (*models.User, error)
+	UpdateOwnProfile(userID string, input ProfileInput) (*models.User, error)
+	RequestRoleChange(userID, requestedRole, reason string) (*models.RoleChangeRequest, error)
+	GetRoleChangeRequests(pendingOnly bool) ([]models.RoleChangeRequest, error)
+	ReviewRoleChangeRequest(id, actorID, decision, note string) (*models.RoleChangeRequest, error)
+}
+
+type GoogleLoginService interface {
+	AuthorizationURL(state string) (string, error)
+	CompleteAuthorization(ctx context.Context, code string, device ...string) (*models.AuthResponse, string, error)
+	Enabled() bool
+}
+
+type ProfileInput struct {
+	CityID string `json:"cityId"`
+	Phone  string `json:"phone"`
+	Campus string `json:"campus"`
+	Cohort string `json:"cohort"`
+	Major  string `json:"major"`
 }
 
 type AccessService interface {
@@ -132,4 +152,5 @@ type Service struct {
 	Access       AccessService
 	Location     LocationService
 	Registration RegistrationService
+	GoogleLogin  GoogleLoginService
 }

@@ -32,24 +32,29 @@ func SetupRouter(app *fiber.App, handlers *Handlers, cfg *config.Config) {
 
 	// Health check
 	api.Get("/health", handlers.HealthCheck)
+	api.Get("/public/cities", handlers.PublicCities)
 
 	// Authentication
 	authLimiter := limiter.New(limiter.Config{Max: 5, Expiration: 15 * time.Minute, LimitReached: RateLimitError})
 	aiLimiter := limiter.New(limiter.Config{Max: 20, Expiration: time.Minute, LimitReached: RateLimitError})
 	uploadLimiter := limiter.New(limiter.Config{Max: 10, Expiration: time.Minute, LimitReached: RateLimitError})
 	registrationLimiter := limiter.New(limiter.Config{Max: 10, Expiration: 10 * time.Minute, LimitReached: RateLimitError})
-	api.Post("/auth/login", authLimiter, handlers.Login)
-	api.Post("/auth/activate", authLimiter, handlers.Activate)
+	api.Get("/auth/google/login", authLimiter, handlers.GoogleLogin)
+	api.Get("/auth/google/callback", handlers.GoogleLoginCallback)
 	api.Post("/public/registrations", registrationLimiter, handlers.CreatePublicRegistration)
 	api.Get("/integrations/google/callback", handlers.GoogleSheetsCallback)
 
 	protected := api.Group("", handlers.RequireAuth)
 	protected.Get("/auth/me", handlers.Me)
+	protected.Put("/auth/profile", handlers.UpdateOwnProfile)
 	protected.Post("/auth/logout", handlers.Logout)
 	protected.Post("/auth/logout-all", handlers.LogoutAll)
 	protected.Get("/auth/access", handlers.GetAccessContext)
 	protected.Get("/auth/users", handlers.RequirePermission("user.manage"), handlers.GetUsers)
-	protected.Post("/auth/users/:id/resend-invitation", handlers.RequirePermission("user.invite"), handlers.ResendInvitation)
+	protected.Post("/auth/users/:id/approve", handlers.RequirePermission("user.manage"), handlers.ApproveGoogleUser)
+	protected.Post("/auth/role-requests", handlers.CreateRoleChangeRequest)
+	protected.Get("/auth/role-requests", handlers.RequirePermission("user.manage"), handlers.GetRoleChangeRequests)
+	protected.Post("/auth/role-requests/:id/review", handlers.RequirePermission("user.manage"), handlers.ReviewRoleChangeRequest)
 	protected.Get("/auth/roles", handlers.RequirePermission("assignment.manage"), handlers.GetRoles)
 	protected.Post("/auth/roles", handlers.RequirePermission("assignment.manage"), handlers.GrantRole)
 	protected.Delete("/auth/roles/:id", handlers.RequirePermission("assignment.manage"), handlers.RevokeRole)

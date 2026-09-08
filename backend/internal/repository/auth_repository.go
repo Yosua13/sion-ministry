@@ -21,6 +21,7 @@ type AuthRepository interface {
 	CreateUserWithRole(user *models.User, role *models.UserRole) error
 	CreateInvitedUser(user *models.User, role *models.UserRole, invitation *models.AccountInvitation, consent *models.MemberConsentHistory, audit *models.AuditLog) error
 	GetUserByEmail(email string) (*models.User, error)
+	GetUserByGoogleSubject(subject string) (*models.User, error)
 	GetUserByID(id string) (*models.User, error)
 	GetUsers() ([]models.User, error)
 	UpdateUser(user *models.User) error
@@ -34,6 +35,12 @@ type AuthRepository interface {
 	ReplaceInvitation(userID string, invitation *models.AccountInvitation, audit *models.AuditLog, at time.Time) error
 	MarkInvitationSent(invitationID string, at time.Time) error
 	CreateAuditLog(audit *models.AuditLog) error
+	CreateGooglePendingUser(user *models.User, audit *models.AuditLog) error
+	ApproveGoogleUser(userID, actorID string, at time.Time) (*models.User, error)
+	UpdateOwnProfile(userID string, updates map[string]any) (*models.User, error)
+	CreateRoleChangeRequest(request *models.RoleChangeRequest) error
+	GetRoleChangeRequests(pendingOnly bool) ([]models.RoleChangeRequest, error)
+	ReviewRoleChangeRequest(id, actorID, decision, note string, at time.Time) (*models.RoleChangeRequest, error)
 }
 
 type authRepository struct{ db *gorm.DB }
@@ -79,6 +86,14 @@ func (r *authRepository) GetUserByEmail(email string) (*models.User, error) {
 	return &user, nil
 }
 
+func (r *authRepository) GetUserByGoogleSubject(subject string) (*models.User, error) {
+	var user models.User
+	if err := r.db.First(&user, "google_subject = ?", subject).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
 func (r *authRepository) GetUserByID(id string) (*models.User, error) {
 	var user models.User
 	if err := r.db.First(&user, "id = ?", id).Error; err != nil {
@@ -97,6 +112,104 @@ func (r *authRepository) GetUsers() ([]models.User, error) {
 }
 
 func (r *authRepository) UpdateUser(user *models.User) error { return r.db.Save(user).Error }
+
+func (r *authRepository) CreateGooglePendingUser(user *models.User, audit *models.AuditLog) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(user).Error; err != nil {
+			return err
+		}
+		return tx.Create(audit).Error
+	})
+}
+
+func (r *authRepository) ApproveGoogleUser(userID, actorID string, at time.Time) (*models.User, error) {
+	var user models.User
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", userID).Error; err != nil {
+			return err
+		}
+		if user.Status != "pending" {
+			return ErrInvitationNotReady
+		}
+		// Profile completion is intentionally deferred until after approval. The
+		// first active login is routed to Profile before application features.
+		if err := tx.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{"account_status": "active", "activated_at": at, "updated_at": at}).Error; err != nil {
+			return err
+		}
+		role := models.UserRole{ID: "urole-" + user.ID + "-jemaat", UserID: user.ID, Role: "jemaat", CityID: user.CityID, GrantedBy: nullable(actorID), GrantedAt: at}
+		if err := tx.Where("user_id = ? AND revoked_at IS NULL", user.ID).Delete(&models.UserRole{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&role).Error; err != nil {
+			return err
+		}
+		return tx.Create(&models.AuditLog{ID: "audit-" + user.ID + "-approved-" + at.Format("20060102150405.000000000"), ActorUserID: nullable(actorID), Action: "account.approved", ResourceType: "user", ResourceID: &user.ID, ScopeType: nullable("city"), ScopeID: user.CityID, Outcome: "success", Metadata: map[string]any{"source": "google_sso"}, CreatedAt: at.Format(time.RFC3339)}).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	user.Status = "active"
+	user.ActivatedAt = &at
+	return &user, nil
+}
+
+func (r *authRepository) UpdateOwnProfile(userID string, updates map[string]any) (*models.User, error) {
+	if err := r.db.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	return r.GetUserByID(userID)
+}
+
+func (r *authRepository) CreateRoleChangeRequest(request *models.RoleChangeRequest) error {
+	return r.db.Create(request).Error
+}
+
+func (r *authRepository) GetRoleChangeRequests(pendingOnly bool) ([]models.RoleChangeRequest, error) {
+	var requests []models.RoleChangeRequest
+	db := r.db.Order("created_at desc")
+	if pendingOnly {
+		db = db.Where("status = 'pending'")
+	}
+	return requests, db.Find(&requests).Error
+}
+
+func (r *authRepository) ReviewRoleChangeRequest(id, actorID, decision, note string, at time.Time) (*models.RoleChangeRequest, error) {
+	var request models.RoleChangeRequest
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&request, "id = ? AND status = 'pending'", id).Error; err != nil {
+			return err
+		}
+		if decision == "approved" {
+			var user models.User
+			if err := tx.First(&user, "id = ?", request.UserID).Error; err != nil {
+				return err
+			}
+			if request.RequestedRole != "admin" && user.CityID == nil {
+				return errors.New("kota pengguna wajib diisi sebelum role disetujui")
+			}
+			if err := tx.Model(&models.UserRole{}).Where("user_id = ? AND revoked_at IS NULL", user.ID).Updates(map[string]any{"revoked_at": at}).Error; err != nil {
+				return err
+			}
+			role := models.UserRole{ID: "urole-" + user.ID + "-" + request.RequestedRole + "-" + at.Format("20060102150405"), UserID: user.ID, Role: request.RequestedRole, GrantedBy: nullable(actorID), GrantedAt: at}
+			if request.RequestedRole != "admin" {
+				role.CityID = user.CityID
+			}
+			if err := tx.Create(&role).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&models.RoleChangeRequest{}).Where("id = ?", id).Updates(map[string]any{"status": decision, "reviewed_by": nullable(actorID), "reviewed_at": at, "review_note": note, "updated_at": at}).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	request.Status = decision
+	request.ReviewedBy = nullable(actorID)
+	request.ReviewedAt = &at
+	request.ReviewNote = note
+	request.UpdatedAt = at
+	return &request, nil
+}
 
 func (r *authRepository) CreateSession(session *models.AuthSession) error {
 	return r.db.Create(session).Error

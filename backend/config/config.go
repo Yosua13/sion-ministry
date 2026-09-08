@@ -43,6 +43,9 @@ type Config struct {
 	GoogleSheetsSpreadsheetID string
 	GoogleSheetsTab           string
 	GoogleTokenEncryptionKey  string
+	GoogleLoginClientID       string
+	GoogleLoginClientSecret   string
+	GoogleLoginRedirectURL    string
 }
 
 func LoadConfig() (*Config, error) {
@@ -105,6 +108,27 @@ func LoadConfig() (*Config, error) {
 	googleRedirectURL := strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_REDIRECT_URL"))
 	googleSpreadsheetID := strings.TrimSpace(os.Getenv("GOOGLE_SHEETS_SPREADSHEET_ID"))
 	googleTokenKey := strings.TrimSpace(os.Getenv("GOOGLE_TOKEN_ENCRYPTION_KEY"))
+	// Google Sign-In shares the existing OAuth client with Google Sheets by
+	// default. Separate values are supported only when explicitly non-empty.
+	googleLoginClientID := strings.TrimSpace(os.Getenv("GOOGLE_LOGIN_CLIENT_ID"))
+	if googleLoginClientID == "" {
+		googleLoginClientID = googleClientID
+	}
+	googleLoginClientSecret := strings.TrimSpace(os.Getenv("GOOGLE_LOGIN_CLIENT_SECRET"))
+	if googleLoginClientSecret == "" {
+		googleLoginClientSecret = googleClientSecret
+	}
+	googleLoginRedirectURL := strings.TrimSpace(os.Getenv("GOOGLE_LOGIN_REDIRECT_URL"))
+	googleLoginValues := []string{googleLoginClientID, googleLoginClientSecret, googleLoginRedirectURL}
+	googleLoginConfigured := 0
+	for _, value := range googleLoginValues {
+		if value != "" {
+			googleLoginConfigured++
+		}
+	}
+	if googleLoginConfigured > 0 && googleLoginConfigured != len(googleLoginValues) {
+		return nil, fmt.Errorf("Google login configuration is incomplete")
+	}
 	googleValues := []string{googleClientID, googleClientSecret, googleRedirectURL, googleSpreadsheetID, googleTokenKey}
 	googleConfigured := 0
 	for _, value := range googleValues {
@@ -150,7 +174,14 @@ func LoadConfig() (*Config, error) {
 		GoogleSheetsSpreadsheetID: googleSpreadsheetID,
 		GoogleSheetsTab:           strings.TrimSpace(getEnv("GOOGLE_SHEETS_TAB", "Registrasi OH 2026")),
 		GoogleTokenEncryptionKey:  googleTokenKey,
+		GoogleLoginClientID:       googleLoginClientID,
+		GoogleLoginClientSecret:   googleLoginClientSecret,
+		GoogleLoginRedirectURL:    googleLoginRedirectURL,
 	}, nil
+}
+
+func (c *Config) GoogleLoginEnabled() bool {
+	return c != nil && c.GoogleLoginClientID != "" && c.GoogleLoginClientSecret != "" && c.GoogleLoginRedirectURL != ""
 }
 
 func (c *Config) GoogleSheetsEnabled() bool {

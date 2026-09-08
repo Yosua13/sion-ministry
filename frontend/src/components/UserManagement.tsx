@@ -44,6 +44,7 @@ import {
   DeviceSession,
   Member,
   RoleAssignment,
+  RoleChangeRequest,
   ScopeCatalog,
   ScopedRole,
   ScopeType,
@@ -53,11 +54,7 @@ import { SionDatabase } from "../utils/db";
 const rolesList: { role: ScopedRole; label: string; description: string; color: string }[] = [
   { role: "admin", label: "Admin", description: "Akses penuh global ke seluruh modul & pengaturan", color: "bg-red-50 text-red-700 border-red-200" },
   { role: "pekerja", label: "Pekerja", description: "Akses pelayanan, jemaat, modul & laporan kota", color: "bg-blue-50 text-blue-700 border-blue-200" },
-  { role: "mentor", label: "Mentor", description: "Pendampingan jemaat dan pemuridan", color: "bg-teal-50 text-teal-700 border-teal-200" },
   { role: "jemaat", label: "Jemaat", description: "Akses modul, renungan & materi pembelajaran", color: "bg-slate-100 text-slate-700 border-slate-200" },
-  { role: "content_publisher", label: "Content Publisher", description: "Mengelola berita & materi modul", color: "bg-purple-50 text-purple-700 border-purple-200" },
-  { role: "auditor", label: "Auditor", description: "Melihat histori audit & laporan kepatuhan", color: "bg-amber-50 text-amber-700 border-amber-200" },
-  { role: "donation_verifier", label: "Verifikator Donasi", description: "Memverifikasi catatan & kampanye donasi", color: "bg-rose-50 text-rose-700 border-rose-200" },
 ];
 
 type ActiveTab = "invitations" | "roles" | "history";
@@ -98,6 +95,7 @@ export default function UserManagement() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [sessions, setSessions] = useState<DeviceSession[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [roleRequests, setRoleRequests] = useState<RoleChangeRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" | "info" } | null>(null);
@@ -151,7 +149,7 @@ export default function UserManagement() {
     () => ({
       total: users.length,
       active: users.filter((user) => user.status === "active").length,
-      pending: users.filter((user) => user.status === "invited").length,
+      pending: users.filter((user) => user.status === "pending").length,
       disabled: users.filter((user) => user.status === "disabled").length,
     }),
     [users]
@@ -171,12 +169,13 @@ export default function UserManagement() {
   const loadAdminData = async () => {
     setIsLoading(true);
     try {
-      const [nextUsers, nextAssignments, nextCatalog, nextAudit, nextMembers] = await Promise.all([
+      const [nextUsers, nextAssignments, nextCatalog, nextAudit, nextMembers, nextRoleRequests] = await Promise.all([
         SionDatabase.getAuthUsers(),
         SionDatabase.getRoleAssignments(),
         SionDatabase.getScopeCatalog(),
         SionDatabase.getAuditLogs(),
         SionDatabase.getScopedMembers(),
+        SionDatabase.getRoleChangeRequests(),
       ]);
 
       const roleByUser = new Map<string, ScopedRole>();
@@ -198,6 +197,7 @@ export default function UserManagement() {
       setSessionUserId((current) => current || usersWithRole[0]?.id || "");
       setAuditLogs(nextAudit);
       setMembers(nextMembers);
+      setRoleRequests(nextRoleRequests);
 
       if (nextCatalog && nextCatalog.cities.length > 0 && !inviteForm.cityId) {
         setInviteForm((prev) => ({ ...prev, cityId: nextCatalog.cities[0].id }));
@@ -376,7 +376,6 @@ export default function UserManagement() {
       <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold uppercase tracking-wider ${color}`}>
         {role === "admin" && <Shield className="h-3 w-3" />}
         {role === "pekerja" && <Briefcase className="h-3 w-3" />}
-        {role === "mentor" && <Users className="h-3 w-3" />}
         {role === "jemaat" && <User className="h-3 w-3" />}
         {matched ? matched.label : role}
       </span>
@@ -395,7 +394,7 @@ export default function UserManagement() {
         </span>
       );
     }
-    if (status === "invited") {
+    if (status === "pending") {
       return (
         <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
           <Clock3 className="h-3.5 w-3.5" />
@@ -532,7 +531,7 @@ export default function UserManagement() {
               Kontrol Pengguna & Hak Akses
             </h1>
             <p className="max-w-2xl text-sm leading-relaxed text-slate-500">
-              Kelola undangan aktivasi akun pengguna, konfigurasi role & scope wilayah, pantau perangkat aktif, serta telusuri rekam jejak audit sistem.
+              Tinjau pendaftaran Google SSO, aktifkan akun pengguna, kelola perubahan role, pantau perangkat aktif, serta telusuri rekam jejak audit sistem.
             </p>
           </div>
 
@@ -551,13 +550,6 @@ export default function UserManagement() {
             >
               <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin text-red-600" : ""}`} />
               Muat Ulang
-            </button>
-            <button
-              onClick={() => setInviteModalOpen(true)}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-red-600 to-red-700 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-red-600/20 transition hover:from-red-700 hover:to-red-800 hover:shadow-lg hover:shadow-red-600/30"
-            >
-              <MailPlus className="h-4 w-4" />
-              Kirim Undangan
             </button>
           </div>
         </div>
@@ -673,6 +665,7 @@ export default function UserManagement() {
       {/* TAB 1: UNDANGAN AKUN (DATATABLE) */}
       {activeTab === "invitations" && (
         <div className="space-y-4">
+          {roleRequests.length > 0 && <section className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4"><h3 className="font-bold text-amber-950">Permintaan perubahan role</h3><div className="mt-3 space-y-2">{roleRequests.map((request) => <div key={request.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white p-3 text-sm"><div><span className="font-bold">{userNames[request.userId] || request.userId}</span> meminta role <strong className="capitalize">{request.requestedRole}</strong>{request.reason && <p className="mt-1 text-xs text-slate-500">{request.reason}</p>}</div><div className="flex gap-2"><button onClick={() => runAction(request.id, () => SionDatabase.reviewRoleChangeRequest(request.id, "approved"), "Permintaan role disetujui.")} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white">Setujui</button><button onClick={() => runAction(request.id, () => SionDatabase.reviewRoleChangeRequest(request.id, "rejected"), "Permintaan role ditolak.")} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700">Tolak</button></div></div>)}</div></section>}
           {/* DataTable Filter Bar */}
           <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
             {/* Search Input */}
@@ -707,7 +700,7 @@ export default function UserManagement() {
                 >
                   <option value="all">Semua Status</option>
                   <option value="active">Aktif</option>
-                  <option value="invited">Menunggu Aktivasi</option>
+                  <option value="pending">Menunggu Persetujuan</option>
                   <option value="disabled">Nonaktif</option>
                 </select>
               </div>
@@ -913,22 +906,22 @@ export default function UserManagement() {
                         {/* Actions cell */}
                         <td className="px-6 py-4 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-2">
-                            {user.status === "invited" ? (
+                            {user.status === "pending" ? (
                               <button
                                 disabled={busyId === user.id}
-                                onClick={() =>
+                                onClick={() => {
+                                  const approved = window.confirm(`Aktifkan akun ${user.name}?\n\nPengguna akan menerima email pemberitahuan dan dapat login menggunakan Google SSO.`);
+                                  if (!approved) return;
                                   runAction(
                                     user.id,
-                                    () => SionDatabase.resendInvitation(user.id),
-                                    import.meta.env.DEV
-                                      ? "Undangan diperbarui. Tautan aktivasi dicatat pada terminal backend."
-                                      : `Undangan aktivasi baru berhasil dikirim ke ${user.email}.`
-                                  )
-                                }
+                                    () => SionDatabase.approveGoogleUser(user.id),
+                                    `Akun ${user.email} telah diaktifkan dan email pemberitahuan dikirim.`
+                                  );
+                                }}
                                 className="inline-flex items-center gap-1.5 rounded-xl bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
                               >
-                                <RefreshCw className={`h-3.5 w-3.5 ${busyId === user.id ? "animate-spin" : ""}`} />
-                                Kirim Ulang
+                                <CheckCircle2 className={`h-3.5 w-3.5 ${busyId === user.id ? "animate-spin" : ""}`} />
+                                Aktifkan Akun
                               </button>
                             ) : (
                               <button
@@ -1157,7 +1150,7 @@ export default function UserManagement() {
                       className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white p-2.5 text-sm font-medium text-slate-800 outline-none focus:border-red-500 focus:ring-4 focus:ring-red-50"
                     >
                       {users
-                        .filter((user) => user.status === "active" && (user.role === "pekerja" || user.role === "admin" || user.role === "mentor"))
+                        .filter((user) => user.status === "active" && (user.role === "pekerja" || user.role === "admin"))
                         .map((user) => (
                           <option key={user.id} value={user.id}>
                             {user.name} ({user.role}) · {user.cityName || "Semua Kota"}

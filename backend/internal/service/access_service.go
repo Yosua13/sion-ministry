@@ -18,13 +18,9 @@ type accessService struct{ db *gorm.DB }
 func NewAccessService(db *gorm.DB) AccessService { return &accessService{db: db} }
 
 var permissionsByRole = map[string][]string{
-	"admin":             {"user.manage", "user.invite", "assignment.manage", "audit.read", "city.read", "city.manage", "member.read", "member.write", "member.sensitive.read", "member.history.read", "member.archive", "member.export", "journal.sensitive.read", "journal.write", "journal.delete", "event.read", "event.manage", "event.delete", "attendance.check_in", "donation.read", "donation.create", "donation.verify", "content.read", "content.publish", "job.read", "job.apply", "application.read", "module.read", "module.publish", "upload.write", "ai.use", "sync.write"},
-	"pekerja":           {"city.read", "member.read", "member.write", "member.sensitive.read", "member.history.read", "member.archive", "member.export", "journal.sensitive.read", "journal.write", "event.read", "event.manage", "attendance.check_in", "donation.read", "donation.verify", "content.read", "job.read", "application.read", "module.read", "upload.write", "ai.use", "sync.write"},
-	"mentor":            {"city.read", "member.read", "journal.sensitive.read", "journal.write", "event.read", "content.read", "job.read", "module.read", "upload.write", "ai.use"},
-	"jemaat":            {"city.read", "member.read", "journal.sensitive.read", "event.read", "donation.read", "donation.create", "content.read", "job.read", "job.apply", "application.read", "module.read", "ai.use"},
-	"content_publisher": {"content.read", "content.publish", "event.read", "event.manage", "job.read", "module.read", "module.publish", "upload.write"},
-	"auditor":           {"audit.read", "city.read", "member.read", "member.history.read", "member.export"},
-	"donation_verifier": {"city.read", "donation.read", "donation.verify"},
+	"admin":   {"user.manage", "user.invite", "assignment.manage", "audit.read", "city.read", "city.manage", "member.read", "member.write", "member.sensitive.read", "member.history.read", "member.archive", "member.export", "journal.sensitive.read", "journal.write", "journal.delete", "event.read", "event.manage", "event.delete", "attendance.check_in", "donation.read", "donation.create", "donation.verify", "content.read", "content.publish", "job.read", "job.apply", "application.read", "module.read", "module.publish", "upload.write", "ai.use", "sync.write"},
+	"pekerja": {"city.read", "member.read", "member.write", "member.sensitive.read", "member.history.read", "member.archive", "member.export", "journal.sensitive.read", "journal.write", "event.read", "event.manage", "attendance.check_in", "donation.read", "donation.verify", "content.read", "job.read", "application.read", "module.read", "upload.write", "ai.use", "sync.write"},
+	"jemaat":  {"city.read", "member.read", "journal.sensitive.read", "event.read", "donation.read", "donation.create", "content.read", "job.read", "job.apply", "application.read", "module.read", "ai.use"},
 }
 
 func (s *accessService) Resolve(user *models.User) (*models.AccessContext, error) {
