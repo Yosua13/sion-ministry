@@ -1,0 +1,8 @@
+[allowlist]
+description = "Ignore example config template keys and dummy values"
+stopwords = [
+  "GOOGLE_TOKEN_ENCRYPTION_KEY"
+]
+paths = [
+  '''backend/\.env\.example$'''
+]
