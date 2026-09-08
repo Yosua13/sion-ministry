@@ -3,7 +3,8 @@ import { SionDatabase } from "./utils/db";
 import { AuthSession, City, Member, BeritaAcara, JurnalPA, DonationCampaign, DonationRecord, DiscipleshipLink, DiscipleshipModule, SyncState } from "./types";
 import Sidebar, { SionLogo } from "./components/Sidebar";
 import AuthScreen from "./components/AuthScreen";
-import ActivationScreen from "./components/ActivationScreen";
+import PendingApprovalScreen from "./components/PendingApprovalScreen";
+import ProfileScreen from "./components/ProfileScreen";
 import Dashboard from "./components/Dashboard";
 import Modules from "./components/Modules";
 import Members from "./components/Members";
@@ -74,13 +75,9 @@ function AuthenticatedApp() {
   };
 
   const roleAllowedTabs: Record<AuthSession["user"]["role"], string[]> = {
-    admin: ["dashboard", "modules", "members", "berita", "jurnal_pa", "donasi", "links", "pekerjaan", "ai", "users"],
-    pekerja: ["home", "modules", "members", "berita", "jurnal_pa", "donasi", "links", "pekerjaan", "ai"],
-    mentor: ["home", "modules", "members", "berita", "jurnal_pa", "donasi", "links", "pekerjaan", "ai"],
-    jemaat: ["home", "modules", "berita", "jurnal_pa", "donasi", "links", "pekerjaan", "ai"],
-    content_publisher: ["home", "modules", "berita", "donasi", "links", "pekerjaan"],
-    auditor: ["home", "members", "berita", "jurnal_pa", "donasi", "links"],
-    donation_verifier: ["home", "donasi"],
+    admin: ["dashboard", "profile", "modules", "members", "berita", "jurnal_pa", "donasi", "links", "pekerjaan", "ai", "users"],
+    pekerja: ["home", "profile", "modules", "members", "berita", "jurnal_pa", "donasi", "links", "pekerjaan", "ai"],
+    jemaat: ["home", "profile", "modules", "berita", "jurnal_pa", "donasi", "links", "pekerjaan", "ai"],
   };
 
   const getDefaultTabForRole = (session: AuthSession | null) => {
@@ -99,6 +96,7 @@ function AuthenticatedApp() {
       case "/":
       case "/dashboard": return "dashboard";
       case "/home": return "home";
+      case "/profile": return "profile";
       case "/modules": return "modules";
       case "/members": return "members";
       case "/berita": return "berita";
@@ -117,6 +115,7 @@ function AuthenticatedApp() {
     switch (tab) {
       case "dashboard": return "/dashboard";
       case "home": return "/home";
+      case "profile": return "/profile";
       case "modules": return "/modules";
       case "members": return "/members";
       case "berita": return "/berita";
@@ -324,6 +323,8 @@ function AuthenticatedApp() {
             }}
           />
         );
+      case "profile":
+        return <ProfileScreen session={authSession!} onUpdated={setAuthSession} />;
       case "dashboard":
         return (
           <Dashboard
@@ -411,6 +412,7 @@ function AuthenticatedApp() {
     switch (activeTab) {
       case "dashboard": return "Dashboard Utama";
       case "home": return authSession?.user.role === "pekerja" ? "Beranda Pekerja" : "Beranda Jemaat";
+      case "profile": return "Profil Saya";
       case "modules": return "Kurikulum Pelatihan";
       case "members": return "Daftar Jemaat";
       case "berita": return "Laporan Berita Acara";
@@ -423,10 +425,10 @@ function AuthenticatedApp() {
     }
   };
 
-  if (!authSession) {
-    if (window.location.pathname === "/activate") return <ActivationScreen onAuthenticated={handleAuthenticated} />;
-    return <AuthScreen onAuthenticated={handleAuthenticated} />;
-  }
+  if (!authSession) return <AuthScreen />;
+  if (authSession.user.status === "pending") return <PendingApprovalScreen session={authSession} onLogout={handleLogout} />;
+  const profileIncomplete = !authSession.user.cityId || !authSession.user.phone || !authSession.user.campus || !authSession.user.cohort || !authSession.user.major;
+  if (profileIncomplete) return <ProfileScreen session={authSession} onUpdated={setAuthSession} />;
 
   if (activeTab === "pekerjaan") {
     return <Pekerjaan onBackToMain={() => changeTab(getDefaultTabForRole(authSession))} />;

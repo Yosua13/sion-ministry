@@ -1,4 +1,4 @@
-import { Member, MemberDuplicateCandidate, MemberHistoryResult, MemberListResult, BeritaAcara, JurnalPA, DonationCampaign, DonationRecord, City, DiscipleshipLink, DiscipleshipModule, SyncPendingChange, SyncState, JobOpportunity, JobApplication, AuthRole, AuthSession, AuthUser, AccessContext, RoleAssignment, ScopeCatalog, AuditLog, DeviceSession, ScopedRole } from "../types";
+import { Member, MemberDuplicateCandidate, MemberHistoryResult, MemberListResult, BeritaAcara, JurnalPA, DonationCampaign, DonationRecord, City, DiscipleshipLink, DiscipleshipModule, SyncPendingChange, SyncState, JobOpportunity, JobApplication, AuthRole, AuthSession, AuthUser, AccessContext, RoleAssignment, ScopeCatalog, AuditLog, DeviceSession, ScopedRole, RoleChangeRequest } from "../types";
 import { initialCities, initialModules, initialBeritaAcara, initialJurnalPA, initialDonationCampaigns, initialLinks, initialJobs } from "../data/initialData";
 
 const STORAGE_KEYS = {
@@ -125,36 +125,7 @@ export class SionDatabase {
     }
   }
 
-  static async login(email: string, password: string): Promise<AuthSession> {
-    this.init();
-    const previousUserId = this.activeSession?.user.id;
-    let response: Response;
-    try {
-      response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-        credentials: "same-origin",
-      });
-    } catch {
-      throw new Error("Server autentikasi tidak dapat dihubungi. Koneksi diperlukan untuk masuk.");
-    }
-    if (!response.ok) {
-      throw new Error(this.toUserFriendlyAuthError(await this.readApiError(response)));
-    }
-    const session = await response.json() as AuthSession;
-    if (previousUserId !== session.user.id) this.clearScopedOperationalData();
-    this.activeSession = session;
-    return session;
-  }
-
-  static async activate(token: string, password: string): Promise<AuthSession> {
-    const response = await fetch("/api/auth/activate", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, password }) });
-    if (!response.ok) throw new Error(await this.readApiError(response) || "Aktivasi akun gagal.");
-    const session = await response.json() as AuthSession;
-    this.activeSession = session;
-    return session;
-  }
+  static startGoogleLogin() { window.location.assign("/api/auth/google/login"); }
 
   static async getAuthUsers(): Promise<AuthUser[]> {
     this.init();
@@ -168,9 +139,11 @@ export class SionDatabase {
     return await response.json() as AuthUser[];
   }
 
-  static async resendInvitation(id: string): Promise<void> {
-    return this.authenticatedJson<void>(`/api/auth/users/${id}/resend-invitation`, { method: "POST" });
-  }
+  static approveGoogleUser(id: string): Promise<AuthUser> { return this.authenticatedJson<AuthUser>(`/api/auth/users/${id}/approve`, { method: "POST" }); }
+  static updateOwnProfile(input: Pick<AuthUser, "cityId" | "phone" | "campus" | "cohort" | "major">): Promise<AuthUser> { return this.authenticatedJson<AuthUser>("/api/auth/profile", { method: "PUT", body: JSON.stringify(input) }); }
+  static requestRoleChange(requestedRole: "pekerja" | "admin", reason: string) { return this.authenticatedJson("/api/auth/role-requests", { method: "POST", body: JSON.stringify({ requestedRole, reason }) }); }
+  static getRoleChangeRequests(): Promise<RoleChangeRequest[]> { return this.authenticatedJson<RoleChangeRequest[]>("/api/auth/role-requests"); }
+  static reviewRoleChangeRequest(id: string, decision: "approved" | "rejected", note = "") { return this.authenticatedJson(`/api/auth/role-requests/${id}/review`, { method: "POST", body: JSON.stringify({ decision, note }) }); }
 
   private static async authenticatedJson<T>(url: string, init: RequestInit = {}): Promise<T> {
     if (!this.activeSession) throw new Error("Sesi tidak ditemukan. Silakan masuk kembali.");
